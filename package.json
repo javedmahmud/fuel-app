@@ -9,7 +9,7 @@
     "worker:build": "esbuild src/worker/index.ts --bundle --platform=node --format=esm --outfile=dist/worker.js",
     "worker:start": "node dist/worker.js",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "format": "prettier --write .",

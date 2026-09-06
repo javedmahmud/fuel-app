@@ -33,13 +33,7 @@ jobs:
           cache: "npm"
 
       - name: Install dependencies
-        run: npm install
-
-      - name: Upload regenerated lockfile (temporary — debugging cross-platform npm ci failure)
-        uses: actions/upload-artifact@v4
-        with:
-          name: package-lock-linux
-          path: package-lock.json
+        run: npm ci
 
       - name: Lint
         run: npm run lint
