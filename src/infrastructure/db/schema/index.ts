@@ -7,6 +7,7 @@
 export * from "./fuel-type";
 export * from "./station";
 export * from "./ingestion-run";
+export * from "./oauth-token-cache";
 export * from "./fuel-price-observation";
 export * from "./daily-price-rollup";
 export * from "./api-response-journal";
