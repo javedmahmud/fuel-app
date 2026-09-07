@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { afterAll, describe, expect, it } from "vitest";
@@ -57,22 +57,24 @@ describe("FuelDataSource against the real NSW Fuel API + real staging Postgres",
     if (!result.ok) return;
 
     // Real NSW reference data — per spike Test 1, thousands of stations, ~16 fuel types.
-    expect(result.value.stations.length).toBeGreaterThan(1000);
-    expect(result.value.fuelTypes.length).toBeGreaterThan(5);
+    expect(result.value.data.stations.length).toBeGreaterThan(1000);
+    expect(result.value.data.fuelTypes.length).toBeGreaterThan(5);
 
     // A real station shape survived normalisation intact.
-    const station = result.value.stations[0];
+    const station = result.value.data.stations[0];
     expect(station.sourceStationCode).toBeTruthy();
     expect(station.source).toBe("NSW_FUEL_API");
     expect(typeof station.latitude).toBe("number");
 
     // The ingestion_run row this call created reflects a real successful run, tagged with this
     // environment's key fingerprint — the actual mechanism ADR-016 depends on, not a mock of it.
+    // Looked up by the real id FetchOutcome returns, not "most recent for this job type" — more
+    // precise, and exercises the exact id the persistence layer (feature/ingestion-persistence)
+    // now depends on.
     const [run] = await db
       .select()
       .from(schema.ingestionRun)
-      .where(eq(schema.ingestionRun.jobType, "ref_data"))
-      .orderBy(desc(schema.ingestionRun.startedAt))
+      .where(eq(schema.ingestionRun.id, result.value.ingestionRunId))
       .limit(1);
     expect(run.status).toBe("success");
     expect(run.environmentName).toBe(config.environmentName);
