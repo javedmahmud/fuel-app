@@ -9,7 +9,7 @@
  * (advisory lock, calling into the Fuel API adapter, exit-code decisions) lives in `jobs.ts`,
  * kept separate specifically so it's testable without a real process/argv/env.
  */
-import { getDb } from "../infrastructure/db/client";
+import { reserveSessionScopedDb } from "../infrastructure/db/client";
 import { FuelDataSource, type FuelDataSourceConfig } from "../infrastructure/fuel-api";
 import { runWorkerJob } from "./jobs";
 
@@ -47,14 +47,28 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const db = getDb();
-  // Constructed lazily, inside the callback, so "rollup"/"retention" — which runWorkerJob
-  // short-circuits to a no-op before ever touching this — don't require Fuel API credentials
-  // to be set at all. Verified this matters: an earlier version constructed it eagerly here and
-  // crashed on `rollup` in an environment with only DATABASE_URL set.
-  const getFuelDataSource = () => new FuelDataSource(db, readFuelApiConfig());
-
-  const outcome = await runWorkerJob(job, { db, getFuelDataSource });
+  // A single reserved connection for the whole invocation, not the shared pool from getDb().
+  // Postgres advisory locks are session-scoped — both this job's own lock (advisory-lock.ts)
+  // and FuelDataSource's OAuth single-flight lock (token-manager.ts) acquire on one call and
+  // release on a later one, and the shared pool has no guarantee those two calls land on the
+  // same underlying connection. Found live: a real cron run logged "you don't own a lock of
+  // type ExclusiveLock" from LockRelease. A worker invocation is one short-lived, sequential
+  // process end to end, so pinning it to one connection for its entire lifetime has no
+  // concurrency downside and is what actually guarantees acquire/release affinity.
+  const { db, release } = await reserveSessionScopedDb();
+  let outcome: Awaited<ReturnType<typeof runWorkerJob>>;
+  try {
+    // Constructed lazily, inside the callback, so "rollup"/"retention" — which runWorkerJob
+    // short-circuits to a no-op before ever touching this — don't require Fuel API credentials
+    // to be set at all. Verified this matters: an earlier version constructed it eagerly here and
+    // crashed on `rollup` in an environment with only DATABASE_URL set.
+    const getFuelDataSource = () => new FuelDataSource(db, readFuelApiConfig());
+    outcome = await runWorkerJob(job, { db, getFuelDataSource });
+  } finally {
+    // Must run before process.exit() below — process.exit() terminates immediately and would
+    // never let a finally attached after it execute, so release() has to happen on its own here.
+    release();
+  }
   console.log(`[worker] ${outcome.message}`);
   process.exit(outcome.exitCode);
 }

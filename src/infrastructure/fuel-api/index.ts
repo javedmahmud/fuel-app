@@ -34,6 +34,18 @@ export interface FuelDataSourceConfig {
 
 type JobType = "new_prices" | "full_sync" | "ref_data";
 
+/**
+ * `ingestionRunId` is exposed alongside the fetched data — added in feature/ingestion-persistence
+ * because the job orchestration layer that persists these records needs it for two things: the
+ * FK on every `fuel_price_observation` row it inserts, and updating this same `ingestion_run`
+ * row's `recordsPersisted`/`recordsRejected` afterward (both columns existed since the db-schema
+ * branch but had nothing to write them until persistence existed to report).
+ */
+export interface FetchOutcome<T> {
+  data: T;
+  ingestionRunId: string;
+}
+
 const MAX_RETRIES_5XX = 2; // §7.8 — "Retry up to 2× with exponential backoff + full jitter"
 
 function delay(ms: number): Promise<void> {
@@ -46,10 +58,10 @@ function delay(ms: number): Promise<void> {
  * retry/backoff, and the response journal — composed into the three-method interface §7.4
  * specifies, each returning `Result` and never throwing.
  *
- * Deliberately stops at returning normalised `PriceObservation[]`/`Station[]`/`FuelType[]` —
+ * Deliberately stops at returning normalised `PriceObservation[]`/`Station[]`/`FuelType[]`
+ * (plus the `ingestion_run` row's id, so the caller can attach persisted records to it) —
  * per-record quality gates (§6.9) and the actual `fuel_price_observation` insert require
- * cross-referencing other repository tables and are the ingestion job's concern, not this
- * adapter's (that orchestration is Sprint 2 work, not this branch).
+ * cross-referencing other repository tables, and live in `src/worker/ingestion/` instead.
  */
 export class FuelDataSource {
   constructor(
@@ -57,7 +69,9 @@ export class FuelDataSource {
     private readonly config: FuelDataSourceConfig,
   ) {}
 
-  async fetchNewPrices(now: Date = new Date()): Promise<Result<PriceObservation[], FuelApiError>> {
+  async fetchNewPrices(
+    now: Date = new Date(),
+  ): Promise<Result<FetchOutcome<PriceObservation[]>, FuelApiError>> {
     return this.runJob("new_prices", "/FuelPriceCheck/v2/fuel/prices/new", now, true, (json) => {
       const parsed = PricesResponseSchema.safeParse(json);
       if (!parsed.success) return err(parsed.error.message);
@@ -66,7 +80,9 @@ export class FuelDataSource {
     });
   }
 
-  async fetchAllPrices(now: Date = new Date()): Promise<Result<PriceObservation[], FuelApiError>> {
+  async fetchAllPrices(
+    now: Date = new Date(),
+  ): Promise<Result<FetchOutcome<PriceObservation[]>, FuelApiError>> {
     return this.runJob("full_sync", "/FuelPriceCheck/v2/fuel/prices", now, true, (json) => {
       const parsed = PricesResponseSchema.safeParse(json);
       if (!parsed.success) return err(parsed.error.message);
@@ -75,7 +91,9 @@ export class FuelDataSource {
     });
   }
 
-  async fetchReferenceData(now: Date = new Date()): Promise<Result<ReferenceData, FuelApiError>> {
+  async fetchReferenceData(
+    now: Date = new Date(),
+  ): Promise<Result<FetchOutcome<ReferenceData>, FuelApiError>> {
     return this.runJob("ref_data", "/FuelCheckRefData/v2/fuel/lovs", now, false, (json) => {
       const parsed = ReferenceDataResponseSchema.safeParse(json);
       if (!parsed.success) return err(parsed.error.message);
@@ -104,7 +122,7 @@ export class FuelDataSource {
     now: Date,
     essential: boolean,
     parseResponse: (json: unknown) => Result<{ data: T; recordCount: number }, string>,
-  ): Promise<Result<T, FuelApiError>> {
+  ): Promise<Result<FetchOutcome<T>, FuelApiError>> {
     const keyFingerprint = computeKeyFingerprint(this.config.consumerKey);
 
     const fingerprintCheck = await checkKeyEnvironmentConsistency(
@@ -171,7 +189,7 @@ export class FuelDataSource {
       })
       .where(eq(ingestionRun.id, runId));
 
-    return ok(parsed.value.data);
+    return ok({ data: parsed.value.data, ingestionRunId: runId });
   }
 
   /**
