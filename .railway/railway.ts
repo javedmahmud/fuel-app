@@ -94,6 +94,24 @@ export default defineRailway(() => {
     },
   });
 
+  // Sun 03:30 AEST (17:30 UTC Sunday) weekly — the "reference data" row per §14.3. Fourth and
+  // last of the four triggers the adapter currently supports (rollup/retention still pending
+  // Sprint 2's job logic). Fuel API vars again reference worker-new-prices, not re-entered.
+  const workerRefData = service("worker-ref-data", {
+    source: fuelApp,
+    start: "node dist/worker.js ref-data",
+    replicas: { "us-west2": 1 },
+    deploy: { cronSchedule: "30 17 * * 0", restartPolicyType: "NEVER" },
+    env: {
+      DATABASE_URL: preserve(),
+      ENVIRONMENT_NAME: preserve(),
+      FUEL_API_BASE_URL: preserve(),
+      FUEL_API_CONSUMER_KEY: preserve(),
+      FUEL_API_CONSUMER_SECRET: preserve(),
+      FUEL_API_VERSION: preserve(),
+    },
+  });
+
   return project("focused-courage", {
     resources: [
       Postgres4iBn,
@@ -102,6 +120,7 @@ export default defineRailway(() => {
       workerNewPrices,
       workerFullSyncMorning,
       workerFullSyncMidnight,
+      workerRefData,
     ],
   });
 });
