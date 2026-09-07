@@ -75,6 +75,25 @@ export default defineRailway(() => {
     },
   });
 
+  // 00:15 AEST (14:15 UTC) daily — the "full sync" row's second trigger per §14.3. Per
+  // 08_INGESTION_ARCHITECTURE.md §8.5, this one specifically isn't a hedge: Test 3d confirmed
+  // the daily watermark reset is strict, so this run is what halves the worst-case loss window
+  // from ~24h to ~12h. Fuel API vars again reference worker-new-prices, not re-entered.
+  const workerFullSyncMidnight = service("worker-full-sync-midnight", {
+    source: fuelApp,
+    start: "node dist/worker.js full-sync",
+    replicas: { "us-west2": 1 },
+    deploy: { cronSchedule: "15 14 * * *", restartPolicyType: "NEVER" },
+    env: {
+      DATABASE_URL: preserve(),
+      ENVIRONMENT_NAME: preserve(),
+      FUEL_API_BASE_URL: preserve(),
+      FUEL_API_CONSUMER_KEY: preserve(),
+      FUEL_API_CONSUMER_SECRET: preserve(),
+      FUEL_API_VERSION: preserve(),
+    },
+  });
+
   return project("focused-courage", {
     resources: [
       Postgres4iBn,
@@ -82,6 +101,7 @@ export default defineRailway(() => {
       postgresVolumeDHsw,
       workerNewPrices,
       workerFullSyncMorning,
+      workerFullSyncMidnight,
     ],
   });
 });
