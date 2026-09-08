@@ -20,6 +20,21 @@ function isKnownJob(value: string | undefined): value is JobName {
   return KNOWN_JOBS.includes(value as JobName);
 }
 
+const DATE_ARG_PATTERN = /^--date=(\d{4}-\d{2}-\d{2})$/;
+
+/** `rollup` only: `node dist/worker.js rollup --date=2026-06-01` — §10.8's "must also be
+ * runnable for an arbitrary date range" (a range is a caller-side loop over single-date
+ * invocations of this). Omitted means "yesterday in Sydney," decided in rollup-job.ts itself. */
+function parseRollupDateArg(argv: string[]): string | undefined {
+  const arg = argv.find((a) => a.startsWith("--date="));
+  if (!arg) return undefined;
+  const match = DATE_ARG_PATTERN.exec(arg);
+  if (!match) {
+    throw new Error(`--date must be yyyy-MM-dd, got "${arg}".`);
+  }
+  return match[1];
+}
+
 function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) {
@@ -63,7 +78,8 @@ async function main(): Promise<void> {
     // to be set at all. Verified this matters: an earlier version constructed it eagerly here and
     // crashed on `rollup` in an environment with only DATABASE_URL set.
     const getFuelDataSource = () => new FuelDataSource(db, readFuelApiConfig());
-    outcome = await runWorkerJob(job, { db, getFuelDataSource });
+    const rollupDate = job === "rollup" ? parseRollupDateArg(process.argv.slice(3)) : undefined;
+    outcome = await runWorkerJob(job, { db, getFuelDataSource, rollupDate });
   } finally {
     // Must run before process.exit() below — process.exit() terminates immediately and would
     // never let a finally attached after it execute, so release() has to happen on its own here.

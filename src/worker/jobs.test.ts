@@ -4,11 +4,13 @@ import { releaseJobLock, tryAcquireJobLock } from "../infrastructure/db/advisory
 import { runFullSyncJob } from "./ingestion/full-sync-job";
 import { runNewPricesJob } from "./ingestion/new-prices-job";
 import { runRefDataJob } from "./ingestion/ref-data-job";
+import { runRollupJob } from "./rollup/rollup-job";
 
 // jobs.ts's actual job is lock acquisition + routing + exit-code mapping — the ingestion
 // pipeline itself (fetch -> gate -> persist) belongs to and is tested by
-// ./ingestion/*.test.ts. Mocking those three functions here keeps this file testing exactly
-// jobs.ts's own responsibility, not re-testing the pipeline through another layer of fakes.
+// ./ingestion/*.test.ts, and the interval-reconstruction algorithm by
+// ../domain/rollup/*.test.ts. Mocking those functions here keeps this file testing exactly
+// jobs.ts's own responsibility, not re-testing any of them through another layer of fakes.
 vi.mock("../infrastructure/db/advisory-lock", () => ({
   tryAcquireJobLock: vi.fn(),
   releaseJobLock: vi.fn(),
@@ -16,12 +18,14 @@ vi.mock("../infrastructure/db/advisory-lock", () => ({
 vi.mock("./ingestion/new-prices-job", () => ({ runNewPricesJob: vi.fn() }));
 vi.mock("./ingestion/full-sync-job", () => ({ runFullSyncJob: vi.fn() }));
 vi.mock("./ingestion/ref-data-job", () => ({ runRefDataJob: vi.fn() }));
+vi.mock("./rollup/rollup-job", () => ({ runRollupJob: vi.fn() }));
 
 const mockedTryAcquire = vi.mocked(tryAcquireJobLock);
 const mockedRelease = vi.mocked(releaseJobLock);
 const mockedNewPrices = vi.mocked(runNewPricesJob);
 const mockedFullSync = vi.mocked(runFullSyncJob);
 const mockedRefData = vi.mocked(runRefDataJob);
+const mockedRollup = vi.mocked(runRollupJob);
 
 const fakeDb = {} as never;
 const fakeGetFuelDataSource = () => ({}) as never;
@@ -42,6 +46,7 @@ describe("runWorkerJob", () => {
     mockedNewPrices.mockReset();
     mockedFullSync.mockReset();
     mockedRefData.mockReset();
+    mockedRollup.mockReset();
     mockedTryAcquire.mockResolvedValue(true);
   });
 
@@ -239,20 +244,12 @@ describe("runWorkerJob", () => {
     }
   });
 
-  it("no-ops rollup and retention without touching the lock or any job", async () => {
-    const rollup = await runWorkerJob("rollup", {
-      db: fakeDb,
-      getFuelDataSource: fakeGetFuelDataSource,
-    });
+  it("no-ops retention without touching the lock or any job", async () => {
     const retention = await runWorkerJob("retention", {
       db: fakeDb,
       getFuelDataSource: fakeGetFuelDataSource,
     });
 
-    expect(rollup).toEqual({
-      exitCode: 0,
-      message: expect.stringContaining("not yet implemented"),
-    });
     expect(retention).toEqual({
       exitCode: 0,
       message: expect.stringContaining("not yet implemented"),
@@ -261,5 +258,92 @@ describe("runWorkerJob", () => {
     expect(mockedNewPrices).not.toHaveBeenCalled();
     expect(mockedFullSync).not.toHaveBeenCalled();
     expect(mockedRefData).not.toHaveBeenCalled();
+    expect(mockedRollup).not.toHaveBeenCalled();
+  });
+
+  it("routes rollup to runRollupJob under the same advisory lock, and reports the counts", async () => {
+    mockedRollup.mockResolvedValue({
+      priceDate: "2026-09-07",
+      pairsProcessed: 10,
+      rowsWritten: 9,
+      rowsSkipped: 1,
+      skippedByReason: { no_prior_observation: 1 },
+    });
+
+    const outcome = await runWorkerJob("rollup", {
+      db: fakeDb,
+      getFuelDataSource: fakeGetFuelDataSource,
+    });
+
+    expect(mockedTryAcquire).toHaveBeenCalledTimes(1); // rollup takes the lock like any other job
+    expect(mockedRollup).toHaveBeenCalledTimes(1);
+    expect(mockedNewPrices).not.toHaveBeenCalled();
+    expect(mockedRelease).toHaveBeenCalledTimes(1);
+    expect(outcome).toEqual({
+      exitCode: 0,
+      message:
+        '"rollup" completed for 2026-09-07 — 9/10 pair(s) rolled up, 1 skipped (no_prior_observation=1).',
+    });
+  });
+
+  it("does not call getFuelDataSource for rollup — it makes zero Fuel API calls", async () => {
+    mockedRollup.mockResolvedValue({
+      priceDate: "2026-09-07",
+      pairsProcessed: 0,
+      rowsWritten: 0,
+      rowsSkipped: 0,
+      skippedByReason: {},
+    });
+    const getFuelDataSource = vi.fn(() => ({}) as never);
+
+    await runWorkerJob("rollup", { db: fakeDb, getFuelDataSource });
+
+    expect(getFuelDataSource).not.toHaveBeenCalled();
+  });
+
+  it("omits the skipped-reason clause when nothing was skipped", async () => {
+    mockedRollup.mockResolvedValue({
+      priceDate: "2026-09-07",
+      pairsProcessed: 5,
+      rowsWritten: 5,
+      rowsSkipped: 0,
+      skippedByReason: {},
+    });
+
+    const outcome = await runWorkerJob("rollup", {
+      db: fakeDb,
+      getFuelDataSource: fakeGetFuelDataSource,
+    });
+
+    expect(outcome.message).toBe(
+      '"rollup" completed for 2026-09-07 — 5/5 pair(s) rolled up, 0 skipped.',
+    );
+  });
+
+  it("still releases the lock if runRollupJob throws — no bespoke error type of its own, so a genuine DB failure propagates", async () => {
+    mockedRollup.mockRejectedValue(new Error("connection reset"));
+
+    await expect(
+      runWorkerJob("rollup", { db: fakeDb, getFuelDataSource: fakeGetFuelDataSource }),
+    ).rejects.toThrow("connection reset");
+    expect(mockedRelease).toHaveBeenCalledTimes(1);
+  });
+
+  it("threads deps.rollupDate through to runRollupJob for backfill", async () => {
+    mockedRollup.mockResolvedValue({
+      priceDate: "2026-05-01",
+      pairsProcessed: 0,
+      rowsWritten: 0,
+      rowsSkipped: 0,
+      skippedByReason: {},
+    });
+
+    await runWorkerJob("rollup", {
+      db: fakeDb,
+      getFuelDataSource: fakeGetFuelDataSource,
+      rollupDate: "2026-05-01",
+    });
+
+    expect(mockedRollup).toHaveBeenCalledWith(fakeDb, expect.any(Date), "2026-05-01");
   });
 });
