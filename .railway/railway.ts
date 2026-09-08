@@ -112,6 +112,28 @@ export default defineRailway(() => {
     },
   });
 
+  // 03:45 AEST (17:45 UTC) daily — 45 min after worker-full-sync-morning, matching
+  // 21_DETAILED_DESIGN.md §21.3's cron table note that rollup "runs after full_sync — depends
+  // on its completion" (real full_sync runs finish in well under a minute against staging's
+  // current size, so this margin is generous, not tight). Zero Fuel API calls (rollup only
+  // reads fuel_price_observation and writes daily_price_rollup — see jobs.ts's own comment on
+  // why it has no FuelApiError of its own), so unlike the other four services this one needs
+  // only DATABASE_URL — no FUEL_API_*/ENVIRONMENT_NAME vars at all, since getFuelDataSource()
+  // is never called for this job. Added via the dashboard after this service was created
+  // (preserve() only works for a value already on Railway, and this was a brand-new service
+  // with nothing yet to preserve), confirmed present and non-empty via
+  // railway variables --json (names/non-emptiness only, never values) — same pattern as the
+  // other four services' brand-new secrets.
+  const workerRollup = service("worker-rollup", {
+    source: fuelApp,
+    start: "node dist/worker.js rollup",
+    replicas: { "us-west2": 1 },
+    deploy: { cronSchedule: "45 17 * * *", restartPolicyType: "NEVER" },
+    env: {
+      DATABASE_URL: preserve(),
+    },
+  });
+
   return project("focused-courage", {
     resources: [
       Postgres4iBn,
@@ -121,6 +143,7 @@ export default defineRailway(() => {
       workerFullSyncMorning,
       workerFullSyncMidnight,
       workerRefData,
+      workerRollup,
     ],
   });
 });
