@@ -5,11 +5,13 @@ import {
   tryAcquireJobLock,
   type LockableJobType,
 } from "../infrastructure/db/advisory-lock";
+import type { SydneyDateString } from "../domain/rollup/day-boundary";
 import type { FuelDataSource } from "../infrastructure/fuel-api";
 import type { FuelApiError } from "../infrastructure/fuel-api/types";
 import { runFullSyncJob } from "./ingestion/full-sync-job";
 import { runNewPricesJob } from "./ingestion/new-prices-job";
 import { runRefDataJob } from "./ingestion/ref-data-job";
+import { runRollupJob } from "./rollup/rollup-job";
 
 type FuelDataSourceLike = Pick<
   FuelDataSource,
@@ -18,16 +20,25 @@ type FuelDataSourceLike = Pick<
 
 export interface WorkerJobDeps {
   /** Needs full table access now — the ingestion jobs read reference data and write
-   * observations/station state, not just the advisory lock's `execute`. */
-  db: Pick<PostgresJsDatabase, "select" | "insert" | "update" | "execute">;
+   * observations/station state, and rollup deletes stale rows for a recomputed-as-skipped
+   * pair, not just the advisory lock's `execute`. */
+  db: Pick<
+    PostgresJsDatabase,
+    "select" | "selectDistinctOn" | "insert" | "update" | "delete" | "execute"
+  >;
   /**
-   * A factory, not an already-built instance — `rollup`/`retention` short-circuit below before
-   * this is ever called, so they don't require Fuel API credentials to be set at all. Narrowed
-   * to just the three methods this module calls, which also makes it trivially fakeable in
-   * tests without a real `FuelDataSource` (real DB, real HTTP).
+   * A factory, not an already-built instance — `rollup`/`retention` never call this, so they
+   * don't require Fuel API credentials to be set at all (rollup makes zero Fuel API calls per
+   * `08_INGESTION_ARCHITECTURE.md`'s cron table). Narrowed to just the three methods this
+   * module calls, which also makes it trivially fakeable in tests without a real
+   * `FuelDataSource` (real DB, real HTTP).
    */
   getFuelDataSource: () => FuelDataSourceLike;
   now?: Date;
+  /** `rollup` only — the Sydney calendar date to roll up. Omitted means "yesterday" (§10.8:
+   * "runs nightly for the previous day"); an explicit value is how backfill/recompute for an
+   * arbitrary date is driven, threaded from `worker/index.ts`'s argv. */
+  rollupDate?: SydneyDateString;
 }
 
 export interface WorkerJobOutcome {
@@ -50,12 +61,11 @@ function exitCodeFor(error: FuelApiError): 0 | 1 {
 /**
  * The testable core of what `src/worker/index.ts` runs — advisory-lock guard
  * (`08_INGESTION_ARCHITECTURE.md` §8.7) around the actual ingestion jobs
- * (`src/worker/ingestion/`), which fetch via the adapter and persist via the repositories.
+ * (`src/worker/ingestion/`) and the rollup job (`src/worker/rollup/`).
  *
- * `rollup` and `retention` are recognised job names (matching `14_DEPLOYMENT.md` §14.3's cron
- * table) but not implemented here — `rollup` needs `10_PRICE_HISTORY_METHOD.md`'s interval-
- * reconstruction algorithm and `retention` needs the pruning logic from §6.8, neither of which
- * exists yet.
+ * `retention` is a recognised job name (matching `14_DEPLOYMENT.md` §14.3's cron table) but not
+ * implemented here — it needs the pruning logic from `06_DATA_ARCHITECTURE.md` §6.8, which
+ * doesn't exist yet and is out of this branch's scope.
  */
 export async function runWorkerJob(
   jobName: "new-prices" | "full-sync" | "ref-data" | "rollup" | "retention",
@@ -63,12 +73,18 @@ export async function runWorkerJob(
 ): Promise<WorkerJobOutcome> {
   const now = deps.now ?? new Date();
 
-  if (jobName === "rollup" || jobName === "retention") {
+  if (jobName === "retention") {
     return { exitCode: 0, message: `"${jobName}" is not yet implemented — no-op.` };
   }
 
   const jobType: LockableJobType =
-    jobName === "new-prices" ? "new_prices" : jobName === "full-sync" ? "full_sync" : "ref_data";
+    jobName === "new-prices"
+      ? "new_prices"
+      : jobName === "full-sync"
+        ? "full_sync"
+        : jobName === "ref-data"
+          ? "ref_data"
+          : "rollup";
 
   const acquired = await tryAcquireJobLock(deps.db, jobType);
   if (!acquired) {
@@ -78,6 +94,25 @@ export async function runWorkerJob(
   }
 
   try {
+    if (jobType === "rollup") {
+      const result = await runRollupJob(deps.db, now, deps.rollupDate);
+
+      // Same "counted and logged" reasoning as the ingestion jobs' rejection breakdown below —
+      // a bare skipped count gives an operator nothing to act on.
+      const skippedBreakdown = Object.entries(result.skippedByReason)
+        .map(([reason, count]) => `${reason}=${count}`)
+        .join(", ");
+
+      return {
+        exitCode: 0,
+        message:
+          `"${jobName}" completed for ${result.priceDate} — ${result.rowsWritten}/` +
+          `${result.pairsProcessed} pair(s) rolled up, ${result.rowsSkipped} skipped` +
+          (skippedBreakdown ? ` (${skippedBreakdown})` : "") +
+          ".",
+      };
+    }
+
     const fuelDataSource = deps.getFuelDataSource();
 
     if (jobType === "ref_data") {
