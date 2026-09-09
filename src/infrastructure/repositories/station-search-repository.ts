@@ -110,3 +110,38 @@ export async function findNearbyCandidates(
 
   return candidates;
 }
+
+export interface StationDisplayInfo {
+  name: string;
+  addressLine: string | null;
+  suburb: string | null;
+}
+
+/**
+ * Name/address for display only — deliberately not part of `NearbyCandidate` or anything that
+ * flows into `rank-candidates.ts`. The calc engine's `CandidateStation`/`RankedCandidate` types
+ * carry only what the ranking math needs (§9.1 — plain data in, plain data out, nothing extra);
+ * bolting display fields onto them would blur that boundary for every future caller, not just
+ * this one debug page. Called separately, after ranking, only for the station ids actually
+ * being shown to a human.
+ */
+export async function loadStationDisplayInfo(
+  db: Pick<PostgresJsDatabase, "select">,
+  stationIds: readonly string[],
+): Promise<Map<string, StationDisplayInfo>> {
+  if (stationIds.length === 0) return new Map();
+
+  const rows = await db
+    .select({
+      id: station.id,
+      name: station.name,
+      addressLine: station.addressLine,
+      suburb: station.suburb,
+    })
+    .from(station)
+    .where(inArray(station.id, [...stationIds]));
+
+  return new Map(
+    rows.map((r) => [r.id, { name: r.name, addressLine: r.addressLine, suburb: r.suburb }]),
+  );
+}
