@@ -12,6 +12,10 @@
 import { runSearch, type SearchOutcome } from "../../../application/search-service";
 import { getDb } from "../../../infrastructure/db/client";
 import { loadActiveFuelTypeCodeToId } from "../../../infrastructure/repositories/fuel-type-repository";
+import {
+  loadStationDisplayInfo,
+  type StationDisplayInfo,
+} from "../../../infrastructure/repositories/station-search-repository";
 
 export const dynamic = "force-dynamic"; // never cache a search result
 
@@ -57,6 +61,7 @@ export default async function InternalSearchPage({
 
   let outcome: SearchOutcome | undefined;
   let searchError: string | undefined;
+  let displayInfoByStationId: Map<string, StationDisplayInfo> = new Map();
   if (submitted) {
     if (!hasRequiredFields) {
       searchError = "Latitude, longitude, fuel type, and max detour km are all required.";
@@ -81,6 +86,13 @@ export default async function InternalSearchPage({
       });
       if (result.ok) {
         outcome = result.value;
+        // Display-only enrichment (name/address) — a separate lookup, after ranking, only for
+        // the stations actually being shown. See loadStationDisplayInfo's own comment on why
+        // this isn't part of the ranking pipeline itself.
+        displayInfoByStationId = await loadStationDisplayInfo(
+          db,
+          result.value.result.ranked.map((r) => r.stationId),
+        );
       } else {
         searchError = `Search failed: ${result.error.type}`;
       }
@@ -175,14 +187,21 @@ export default async function InternalSearchPage({
       <hr />
 
       {searchError && <p style={{ color: "red" }}>{searchError}</p>}
-      {outcome && <ResultView outcome={outcome} />}
+      {outcome && <ResultView outcome={outcome} displayInfoByStationId={displayInfoByStationId} />}
     </div>
   );
 }
 
-function ResultView({ outcome }: { outcome: SearchOutcome }) {
+function ResultView({
+  outcome,
+  displayInfoByStationId,
+}: {
+  outcome: SearchOutcome;
+  displayInfoByStationId: Map<string, StationDisplayInfo>;
+}) {
   const { result, recommendationLogId } = outcome;
   const { recommended } = result;
+  const recommendedInfo = displayInfoByStationId.get(recommended.stationId);
 
   return (
     <div>
@@ -208,11 +227,16 @@ function ResultView({ outcome }: { outcome: SearchOutcome }) {
 
       <h3>Recommended station</h3>
       <ul>
-        <li>station id: {recommended.stationId}</li>
+        <li>name: {recommendedInfo?.name ?? "(unknown)"}</li>
+        <li>
+          address: {recommendedInfo?.addressLine ?? "(unknown)"}
+          {recommendedInfo?.suburb ? `, ${recommendedInfo.suburb}` : ""}
+        </li>
         <li>brand: {recommended.brand ?? "unknown"}</li>
         <li>distance: {recommended.metrics.distanceKm.toFixed(2)} km</li>
         <li>price: {(recommended.metrics.priceTenthsCpl / 10).toFixed(1)} c/L</li>
         <li>effective cost: ${(recommended.metrics.effectiveCostCents / 100).toFixed(2)}</li>
+        <li>station id: {recommended.stationId}</li>
       </ul>
 
       <h3>All eligible candidates, ranked</h3>
@@ -220,24 +244,34 @@ function ResultView({ outcome }: { outcome: SearchOutcome }) {
         <thead>
           <tr>
             <th>#</th>
-            <th>station id</th>
+            <th>name</th>
+            <th>address</th>
             <th>brand</th>
             <th>distance (km)</th>
             <th>price (c/L)</th>
             <th>effective cost ($)</th>
+            <th>station id</th>
           </tr>
         </thead>
         <tbody>
-          {result.ranked.map((candidate, i) => (
-            <tr key={candidate.stationId}>
-              <td>{i + 1}</td>
-              <td>{candidate.stationId}</td>
-              <td>{candidate.brand ?? "unknown"}</td>
-              <td>{candidate.metrics.distanceKm.toFixed(2)}</td>
-              <td>{(candidate.metrics.priceTenthsCpl / 10).toFixed(1)}</td>
-              <td>{(candidate.metrics.effectiveCostCents / 100).toFixed(2)}</td>
-            </tr>
-          ))}
+          {result.ranked.map((candidate, i) => {
+            const info = displayInfoByStationId.get(candidate.stationId);
+            return (
+              <tr key={candidate.stationId}>
+                <td>{i + 1}</td>
+                <td>{info?.name ?? "(unknown)"}</td>
+                <td>
+                  {info?.addressLine ?? "(unknown)"}
+                  {info?.suburb ? `, ${info.suburb}` : ""}
+                </td>
+                <td>{candidate.brand ?? "unknown"}</td>
+                <td>{candidate.metrics.distanceKm.toFixed(2)}</td>
+                <td>{(candidate.metrics.priceTenthsCpl / 10).toFixed(1)}</td>
+                <td>{(candidate.metrics.effectiveCostCents / 100).toFixed(2)}</td>
+                <td>{candidate.stationId}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
