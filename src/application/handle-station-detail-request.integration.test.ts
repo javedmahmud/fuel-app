@@ -25,7 +25,7 @@ function testStation(overrides: Partial<Station> = {}): Station {
     source: "NSW_FUEL_API",
     name: "Contract Test Station",
     brand: "Acme",
-    addressLine: "1 Test St",
+    addressLine: "1 Test St, Testville NSW 2000",
     latitude: -33.87,
     longitude: 151.21,
     state: "NSW",
@@ -108,9 +108,11 @@ describe("handleStationDetailRequest against real Postgres", () => {
       expect(body.name).toBe(s.name);
       expect(body.brand).toBe(s.brand);
       expect(body.address.line).toBe(s.addressLine);
-      // The ingestion `Station` type has no suburb/postcode field yet — a pre-existing gap in
-      // the ingestion pipeline, not something this branch changes — so both are null today.
-      expect(body.address.suburb).toBeNull();
+      // Parsed from addressLine at upsert time (feature/station-address-parser) — comma-
+      // delimited addresses like this fixture's resolve reliably (see that branch's own module
+      // comment on `domain/station/parse-address.ts` for the confirmed-live hit rates).
+      expect(body.address.suburb).toBe("Testville");
+      expect(body.address.postcode).toBe("2000");
       expect(body.distanceKm).toBeNull(); // no lat/lng supplied
       expect(body.prices).toHaveLength(1);
       expect(body.prices[0].price.centsPerLitre).toBeCloseTo(189.9);

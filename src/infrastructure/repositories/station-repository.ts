@@ -1,6 +1,7 @@
 import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 
+import { parseSuburbAndPostcodeFromAddress } from "../../domain/station/parse-address";
 import { station } from "../db/schema";
 import type { Station } from "../fuel-api/types";
 
@@ -46,21 +47,32 @@ export async function upsertStationsFromReferenceData(
     await db
       .insert(station)
       .values(
-        batch.map((s) => ({
-          sourceStationCode: s.sourceStationCode,
-          source: s.source,
-          name: s.name,
-          brand: s.brand,
-          addressLine: s.addressLine,
-          latitude: String(s.latitude),
-          longitude: String(s.longitude),
-          state: s.state,
-          lifecycleState: "active" as const,
-          consecutiveMissingSyncs: 0,
-          sourceUpdatedAt: now,
-          firstSeenAt: now,
-          lastSeenAt: now,
-        })),
+        batch.map((s) => {
+          // The NSW Fuel API has no separate suburb/postcode field — only `s.addressLine`
+          // (`domain/station/parse-address.ts`'s own module comment has the full rationale and
+          // confirmed-live hit rates). Derived here, not carried on `Station` itself: `Station`
+          // represents what the API actually returned, and this is exactly the same "derived,
+          // DB-only field" treatment `lifecycleState`/`consecutiveMissingSyncs` already get in
+          // this same function.
+          const { suburb, postcode } = parseSuburbAndPostcodeFromAddress(s.addressLine);
+          return {
+            sourceStationCode: s.sourceStationCode,
+            source: s.source,
+            name: s.name,
+            brand: s.brand,
+            addressLine: s.addressLine,
+            suburb,
+            postcode,
+            latitude: String(s.latitude),
+            longitude: String(s.longitude),
+            state: s.state,
+            lifecycleState: "active" as const,
+            consecutiveMissingSyncs: 0,
+            sourceUpdatedAt: now,
+            firstSeenAt: now,
+            lastSeenAt: now,
+          };
+        }),
       )
       .onConflictDoUpdate({
         target: [station.sourceStationCode, station.source],
@@ -68,6 +80,8 @@ export async function upsertStationsFromReferenceData(
           name: sql`excluded.name`,
           brand: sql`excluded.brand`,
           addressLine: sql`excluded.address_line`,
+          suburb: sql`excluded.suburb`,
+          postcode: sql`excluded.postcode`,
           latitude: sql`excluded.latitude`,
           longitude: sql`excluded.longitude`,
           state: sql`excluded.state`,

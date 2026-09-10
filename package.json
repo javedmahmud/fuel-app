@@ -18,6 +18,7 @@
     "db:migrate": "tsx src/infrastructure/db/migrate.ts",
     "locality:build": "tsx scripts/build-locality-dataset.ts",
     "postcode:build": "tsx scripts/build-postcode-dataset.ts",
+    "db:backfill-station-address": "tsx scripts/backfill-station-suburb-postcode.ts",
     "test:integration": "vitest run --config vitest.integration.config.mts",
     "prepare": "husky"
   },
