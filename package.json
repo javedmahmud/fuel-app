@@ -17,6 +17,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/infrastructure/db/migrate.ts",
     "locality:build": "tsx scripts/build-locality-dataset.ts",
+    "postcode:build": "tsx scripts/build-postcode-dataset.ts",
     "test:integration": "vitest run --config vitest.integration.config.mts",
     "prepare": "husky"
   },
