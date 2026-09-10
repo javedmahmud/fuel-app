@@ -1,0 +1,41 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1788669731640,
+      "tag": "0000_quick_doctor_spectrum",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788669752147,
+      "tag": "0001_observation_append_only",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788679504943,
+      "tag": "0002_add_ingestion_run_fingerprint",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788679939998,
+      "tag": "0003_add_oauth_token_cache",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789033957603,
+      "tag": "0004_cuddly_stature",
+      "breakpoints": true
+    }
+  ]
+}

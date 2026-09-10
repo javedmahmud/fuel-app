@@ -1,0 +1,11 @@
+npx lint-staged
+
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks protect --staged --redact -v
+else
+  echo ""
+  echo "⚠️  gitleaks is not installed — secret scanning was SKIPPED for this commit."
+  echo "   Install it before committing anything real: brew install gitleaks"
+  echo "   CI still runs the full scan on push, but don't rely on that as the only check."
+  echo ""
+fi
