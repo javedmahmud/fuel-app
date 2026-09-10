@@ -12,6 +12,7 @@ import {
   deleteDailyRollupsForDate,
   loadDayEvents,
   loadOpeningPrices,
+  loadRollupSeries,
   loadStationsDeactivatedDuring,
   upsertDailyRollups,
   type DailyRollupRow,
@@ -297,6 +298,70 @@ describe("rollup-repository against real Postgres", () => {
             sql`${dailyPriceRollup.stationId} = ${stationId} and ${dailyPriceRollup.fuelTypeId} = ${fuelTypeId} and ${dailyPriceRollup.priceDate} = ${priceDate}`,
           );
         expect(remaining).toHaveLength(0);
+
+        throw new IntentionalTestRollback();
+      });
+    } catch (e) {
+      if (!(e instanceof IntentionalTestRollback)) throw e;
+    }
+  }, 30_000);
+
+  it("loadRollupSeries returns only the requested (station, fuel type)'s rows inside [sinceDate, untilDate], ascending", async () => {
+    const db = getDb();
+    try {
+      await db.transaction(async (tx) => {
+        const s = testStation();
+        await upsertStationsFromReferenceData(tx, [s], new Date());
+        const ft: FuelType = { sourceCode: `TESTFT_${Date.now()}`, displayName: "Test" };
+        await upsertFuelTypesFromReferenceData(tx, [ft]);
+        const [stationRow] = await tx
+          .select({ id: station.id })
+          .from(station)
+          .where(sql`${station.sourceStationCode} = ${s.sourceStationCode}`);
+        const stationId = stationRow.id;
+        const [ftRow] = await tx
+          .select({ id: fuelType.id })
+          .from(fuelType)
+          .where(sql`${fuelType.sourceCode} = ${ft.sourceCode}`);
+        const fuelTypeId = ftRow.id;
+
+        function row(priceDate: string, timeWeightedAvgTenths: number): DailyRollupRow {
+          return {
+            stationId,
+            fuelTypeId,
+            priceDate,
+            timeWeightedAvgTenths,
+            minTenthsCpl: timeWeightedAvgTenths,
+            maxTenthsCpl: timeWeightedAvgTenths,
+            openTenthsCpl: timeWeightedAvgTenths,
+            closeTenthsCpl: timeWeightedAvgTenths,
+            observationCount: 1,
+            carriedForward: false,
+            openingPriceAgeDays: 0,
+            partialDay: false,
+            methodVersion: "v1",
+            computedAt: new Date(),
+          };
+        }
+
+        await upsertDailyRollups(tx, [
+          row("2026-06-13", 1900), // before the window — must be excluded
+          row("2026-06-14", 2000),
+          row("2026-06-15", 2010),
+          row("2026-06-16", 2020),
+          row("2026-06-17", 2030), // after the window — must be excluded
+        ]);
+
+        const series = await loadRollupSeries(
+          tx,
+          stationId,
+          fuelTypeId,
+          "2026-06-14",
+          "2026-06-16",
+        );
+
+        expect(series.map((r) => r.priceDate)).toEqual(["2026-06-14", "2026-06-15", "2026-06-16"]);
+        expect(series.map((r) => r.timeWeightedAvgTenths)).toEqual([2000, 2010, 2020]);
 
         throw new IntentionalTestRollback();
       });

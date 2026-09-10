@@ -55,3 +55,18 @@ export function previousSydneyDate(dateStr: SydneyDateString): SydneyDateString 
   const d = new Date(Date.UTC(year, month - 1, day - 1));
   return d.toISOString().slice(0, 10);
 }
+
+/** `count` consecutive calendar dates ending at (and including) `endDateStr`, ascending —
+ * oldest first. Used by the history endpoint (`21_DETAILED_DESIGN.md` §21.1) to enumerate the
+ * requested window for gap-checking (`domain/rollup/coverage-note.ts`) against what
+ * `daily_price_rollup` actually has. */
+export function sydneyDateRangeEndingAt(
+  endDateStr: SydneyDateString,
+  count: number,
+): SydneyDateString[] {
+  const dates: SydneyDateString[] = [endDateStr];
+  for (let i = 1; i < count; i++) {
+    dates.unshift(previousSydneyDate(dates[0]));
+  }
+  return dates;
+}

@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lt, lte, or, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 
 import { dailyPriceRollup, fuelPriceObservation, station } from "../db/schema";
@@ -97,6 +97,54 @@ export async function loadStationsDeactivatedDuring(
       ),
     );
   return new Map(rows.map((r) => [r.id, r.lastSeenAt]));
+}
+
+export interface RollupSeriesRow {
+  priceDate: SydneyDateString;
+  timeWeightedAvgTenths: number | null;
+  minTenthsCpl: number | null;
+  maxTenthsCpl: number | null;
+  closeTenthsCpl: number | null;
+  observationCount: number;
+  partialDay: boolean;
+  carriedForward: boolean;
+}
+
+/**
+ * The read side of `daily_price_rollup` for one (station, fuel type) over `[sinceDate,
+ * untilDate]` inclusive — `GET /stations/{id}/history` (§21.1, UC-06). Ascending by
+ * `priceDate`, matching the chronological order `history.ts`'s `trend()` and the response's
+ * `series` array both need. Composite-PK order is `(station_id, fuel_type_id, price_date)`, so
+ * this is an index-only range scan, not a table scan.
+ */
+export async function loadRollupSeries(
+  db: ReadDb,
+  stationId: string,
+  fuelTypeId: string,
+  sinceDate: SydneyDateString,
+  untilDate: SydneyDateString,
+): Promise<RollupSeriesRow[]> {
+  return db
+    .select({
+      priceDate: dailyPriceRollup.priceDate,
+      timeWeightedAvgTenths: dailyPriceRollup.timeWeightedAvgTenths,
+      minTenthsCpl: dailyPriceRollup.minTenthsCpl,
+      maxTenthsCpl: dailyPriceRollup.maxTenthsCpl,
+      closeTenthsCpl: dailyPriceRollup.closeTenthsCpl,
+      observationCount: dailyPriceRollup.observationCount,
+      partialDay: dailyPriceRollup.partialDay,
+      carriedForward: dailyPriceRollup.carriedForward,
+    })
+    .from(dailyPriceRollup)
+    .where(
+      and(
+        eq(dailyPriceRollup.stationId, stationId),
+        eq(dailyPriceRollup.fuelTypeId, fuelTypeId),
+        gte(dailyPriceRollup.priceDate, sinceDate),
+        lte(dailyPriceRollup.priceDate, untilDate),
+      ),
+    )
+    .orderBy(asc(dailyPriceRollup.priceDate));
 }
 
 export interface DailyRollupRow {

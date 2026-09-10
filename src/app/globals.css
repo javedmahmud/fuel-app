@@ -1,40 +1,84 @@
+/**
+ * Design tokens carried over from the approved "Fuel Intelligence" prototype (the published
+ * Artifact walkthrough of all 8 use cases) — same palette, type scale, and card language, now
+ * applied to the real screens instead of static mock data. `21_DETAILED_DESIGN.md` §21.9: "Screens
+ * are the product-definition pack's own spec... mobile-first."
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --petrol-900: #0e3533;
+  --petrol-700: #1b4e4a;
+  --petrol-600: #265f5a;
+  --amber-500: #f0a202;
+  --amber-700: #c77f00;
+  --amber-100: #fce7be;
+  --paper: #f3f6f4;
+  --paper-raised: #ffffff;
+  --ink: #10201e;
+  --ink-soft: #4a5f5c;
+  --line: #d7e0dd;
+  --good-green: #2f8f5b;
+  --good-green-soft: #e4f2ea;
+  --warn-amber: #b4650b;
+  --warn-amber-soft: #fbebd3;
+  --danger: #b4342e;
+  --shadow: 0 1px 2px rgba(14, 53, 51, 0.06), 0 6px 20px rgba(14, 53, 51, 0.08);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --paper: #0b211f;
+    --paper-raised: #123734;
+    --ink: #eaf3f1;
+    --ink-soft: #9fbab6;
+    --line: #204540;
+    --amber-100: #3a2c0e;
+    --good-green-soft: #123a2a;
+    --warn-amber-soft: #3a2a12;
+    --danger: #e17169;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 30px rgba(0, 0, 0, 0.35);
+    color-scheme: dark;
   }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  max-width: 100vw;
 }
 
 html {
   height: 100%;
 }
 
-html,
-body {
-  max-width: 100vw;
-  overflow-x: hidden;
-}
-
 body {
   min-height: 100%;
-  display: flex;
-  flex-direction: column;
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family:
+    "Public Sans",
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-* {
-  box-sizing: border-box;
-  padding: 0;
+h1,
+h2,
+h3,
+.display {
+  font-family: "Big Shoulders Display", "Arial Narrow", sans-serif;
+  font-weight: 800;
   margin: 0;
+}
+
+.mono {
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-variant-numeric: tabular-nums;
 }
 
 a {
@@ -42,8 +86,10 @@ a {
   text-decoration: none;
 }
 
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
-  }
+button {
+  font-family: inherit;
+}
+
+img {
+  max-width: 100%;
 }

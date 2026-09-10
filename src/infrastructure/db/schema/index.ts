@@ -16,3 +16,4 @@ export * from "./app-user";
 export * from "./vehicle-profile";
 export * from "./price-alert";
 export * from "./recommendation-log";
+export * from "./rate-limit-window";

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { previousSydneyDate, sydneyDateOf, sydneyDayBoundary } from "./day-boundary";
+import {
+  previousSydneyDate,
+  sydneyDateOf,
+  sydneyDateRangeEndingAt,
+  sydneyDayBoundary,
+} from "./day-boundary";
 
 describe("sydneyDayBoundary", () => {
   it("returns a 24h span on an ordinary day", () => {
@@ -52,5 +57,28 @@ describe("previousSydneyDate", () => {
   it("rolls back across a month/year boundary", () => {
     expect(previousSydneyDate("2026-01-01")).toBe("2025-12-31");
     expect(previousSydneyDate("2026-03-01")).toBe("2026-02-28");
+  });
+});
+
+describe("sydneyDateRangeEndingAt", () => {
+  it("returns count consecutive dates, ascending, ending at the given date", () => {
+    expect(sydneyDateRangeEndingAt("2026-09-08", 3)).toEqual([
+      "2026-09-06",
+      "2026-09-07",
+      "2026-09-08",
+    ]);
+  });
+
+  it("returns exactly the end date for count 1", () => {
+    expect(sydneyDateRangeEndingAt("2026-09-08", 1)).toEqual(["2026-09-08"]);
+  });
+
+  it("rolls back across a month/year boundary", () => {
+    expect(sydneyDateRangeEndingAt("2026-01-02", 4)).toEqual([
+      "2025-12-30",
+      "2025-12-31",
+      "2026-01-01",
+      "2026-01-02",
+    ]);
   });
 });

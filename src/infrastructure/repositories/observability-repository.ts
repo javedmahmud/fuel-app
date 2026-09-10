@@ -1,6 +1,7 @@
-import { and, desc, eq, max, ne } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, max, ne } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 
+import { sydneyDateOf } from "../../domain/rollup/day-boundary";
 import { apiResponseJournal, fuelPriceObservation, ingestionRun } from "../db/schema";
 
 type ReadDb = Pick<PostgresJsDatabase, "select">;
@@ -49,4 +50,29 @@ export async function loadRecentFullSyncInsertedCounts(
     .orderBy(desc(ingestionRun.finishedAt))
     .limit(limit);
   return rows.map((r) => r.recordsPersisted);
+}
+
+/** §21.1's history endpoint (UC-06): Sydney calendar dates with a `new_prices`/`full_sync` run
+ * that didn't fully succeed (`failed`/`partial`/`skipped_budget`/`skipped_circuit`) — the
+ * `coverageNote` "degraded" half, feeding `domain/rollup/coverage-note.ts`'s `hasCoverageGap`.
+ * `ref_data`/`rollup` runs are excluded: they don't fetch prices, so their own health says
+ * nothing about a gap in *price* coverage. Keyed by `started_at`, not `finished_at` — a run that
+ * degraded partway through still started on the day it was trying to cover. */
+export async function loadDegradedIngestionDates(
+  db: ReadDb,
+  since: Date,
+  until: Date,
+): Promise<Set<string>> {
+  const rows = await db
+    .select({ startedAt: ingestionRun.startedAt })
+    .from(ingestionRun)
+    .where(
+      and(
+        inArray(ingestionRun.jobType, ["new_prices", "full_sync"]),
+        inArray(ingestionRun.status, ["failed", "partial", "skipped_budget", "skipped_circuit"]),
+        gte(ingestionRun.startedAt, since),
+        lt(ingestionRun.startedAt, until),
+      ),
+    );
+  return new Set(rows.map((r) => sydneyDateOf(r.startedAt)));
 }
