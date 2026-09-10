@@ -12,9 +12,18 @@
  * **Response shape decision, since the doc's own example shows only one result and doesn't say
  * whether every entry needs full annotation:** every eligible candidate is returned (the Results
  * screen, §21.9, needs multiple station cards, not just one), but `reasonCodes`/`confidence`/
- * `metrics.estimatedSaving` are populated only on the recommended entry — those fields are
- * inherently comparative (§9.8's `ALREADY_NEAREST_AND_CHEAPEST` etc. only make sense for one
- * chosen station), and `rankCandidates` only computes them for the winner.
+ * `metrics.estimatedSaving`/`explanation` are populated only on the recommended entry — those
+ * fields are inherently comparative (§9.8's `ALREADY_NEAREST_AND_CHEAPEST` etc. only make sense
+ * for one chosen station), and `rankCandidates` only computes them for the winner.
+ *
+ * **`explanation`** is `templateExplainer.explainRecommendation()`'s one-sentence prose
+ * (`feature/template-explainer`, `12_AI_ARCHITECTURE.md` §12.5) — matching
+ * `15_SEQUENCE_DIAGRAMS.md` §15.1's flow, which calls this inside the search request itself,
+ * before the response goes back. Not persisted to `recommendation_log` — that table's own schema
+ * comment is explicit that reason codes, not prose, are "the only channel between the
+ * calculation engine and the explanation layer... never free text"; the sentence is cheap and
+ * deterministic to regenerate from the stored codes, so there's nothing to gain from storing it
+ * twice.
  *
  * **No 5xx path depends on an external call** (§21.1) — `no_eligible_candidates` is an honestly
  * labelled empty `200`, never a `4xx`/`5xx`. Only genuine request-shape problems are `400`s.
@@ -23,6 +32,7 @@ import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { z } from "zod";
 
 import type { LatLng } from "../domain/calculation/types";
+import { explainRecommendation } from "../domain/explanation/template-explainer";
 import { isWithinNswTasBounds } from "../domain/geo/nsw-tas-bounds";
 import { resolveLocality } from "../domain/locality/locality-resolver";
 import { loadNswLocalities } from "../infrastructure/locality/load-nsw-localities";
@@ -170,6 +180,11 @@ async function buildResponseBody(
     result.ranked.map((r) => r.stationId),
   );
 
+  // Computed once for the recommended candidate only — explainRecommendation is a pure function
+  // of the whole RecommendationResult (it needs reasonCodes/estimatedSavingCents alongside the
+  // recommended candidate's own metrics), not something derivable per-candidate in the map below.
+  const explanation = explainRecommendation(result);
+
   const results = result.ranked.map((candidate) => {
     const isRecommended = candidate.stationId === result.recommended.stationId;
     const info = displayInfo.get(candidate.stationId);
@@ -189,6 +204,7 @@ async function buildResponseBody(
       },
       reasonCodes: isRecommended ? result.reasonCodes : [],
       confidence: isRecommended ? result.confidence : null,
+      explanation: isRecommended ? explanation : null,
       source: "NSW Fuel API",
       sourceObservedAt: candidate.metrics.sourceReportedAt.toISOString(),
     };

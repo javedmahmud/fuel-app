@@ -198,6 +198,7 @@ describe("handleSearchRequest against real Postgres", () => {
         stationId: string;
         reasonCodes: string[];
         confidence: unknown;
+        explanation: string | null;
         metrics: { estimatedSaving: number | null };
       }>;
       const recommended = results.find((r) => r.stationId === cheapStationId);
@@ -207,9 +208,12 @@ describe("handleSearchRequest against real Postgres", () => {
       expect(recommended?.reasonCodes.length).toBeGreaterThan(0);
       expect(recommended?.confidence).not.toBeNull();
       expect(recommended?.metrics.estimatedSaving).not.toBeNull();
+      expect(typeof recommended?.explanation).toBe("string");
+      expect(recommended?.explanation?.length).toBeGreaterThan(0);
       expect(other?.reasonCodes).toEqual([]);
       expect(other?.confidence).toBeNull();
       expect(other?.metrics.estimatedSaving).toBeNull();
+      expect(other?.explanation).toBeNull();
     });
   }, 30_000);
 
@@ -395,13 +399,19 @@ describe("handleSearchRequest against real Postgres", () => {
 
       expect(result.status).toBe(200);
       const body = result.body as {
-        results: Array<{ stationId: string; reasonCodes: string[]; confidence: unknown }>;
+        results: Array<{
+          stationId: string;
+          reasonCodes: string[];
+          confidence: unknown;
+          explanation: string | null;
+        }>;
       };
       expect(body.results).toHaveLength(50);
       const recommended = body.results.find((r) => r.stationId === recommendedStationId);
       expect(recommended).toBeDefined();
       expect(recommended?.reasonCodes.length).toBeGreaterThan(0);
       expect(recommended?.confidence).not.toBeNull();
+      expect(typeof recommended?.explanation).toBe("string");
     });
   }, 30_000);
 });
