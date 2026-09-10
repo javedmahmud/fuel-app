@@ -128,6 +128,61 @@ describe("fuel-type-repository, station-repository, observation-repository again
     }
   });
 
+  it("derives suburb/postcode from addressLine on insert, and re-derives them on conflict when the address changes", async () => {
+    const db = getDb();
+    try {
+      await db.transaction(async (tx) => {
+        const s = testStation({ addressLine: "101 Hector St, Sefton NSW 2162" });
+        await upsertStationsFromReferenceData(tx, [s], new Date());
+
+        const [row] = await tx
+          .select({ suburb: station.suburb, postcode: station.postcode })
+          .from(station)
+          .where(sql`${station.sourceStationCode} = ${s.sourceStationCode}`);
+        expect(row).toEqual({ suburb: "Sefton", postcode: "2162" });
+
+        // Re-upserted with a different address (a real, if rare, provider correction) — the
+        // derived fields must track it, not keep the stale value from the first insert.
+        await upsertStationsFromReferenceData(
+          tx,
+          [{ ...s, addressLine: "5 Example Rd, Newtown NSW 2042" }],
+          new Date(),
+        );
+        const [updated] = await tx
+          .select({ suburb: station.suburb, postcode: station.postcode })
+          .from(station)
+          .where(sql`${station.sourceStationCode} = ${s.sourceStationCode}`);
+        expect(updated).toEqual({ suburb: "Newtown", postcode: "2042" });
+
+        throw new IntentionalTestRollback();
+      });
+    } catch (e) {
+      if (!(e instanceof IntentionalTestRollback)) throw e;
+    }
+  });
+
+  it("leaves suburb/postcode null for an address the parser can't safely resolve, rather than guessing", async () => {
+    const db = getDb();
+    try {
+      await db.transaction(async (tx) => {
+        // No comma before the suburb — genuinely ambiguous against the street name.
+        const s = testStation({ addressLine: "275 Pacific Hwy Hornsby NSW 2077" });
+        await upsertStationsFromReferenceData(tx, [s], new Date());
+
+        const [row] = await tx
+          .select({ suburb: station.suburb, postcode: station.postcode })
+          .from(station)
+          .where(sql`${station.sourceStationCode} = ${s.sourceStationCode}`);
+        expect(row.suburb).toBeNull();
+        expect(row.postcode).toBe("2077"); // still unambiguous, even without the comma
+
+        throw new IntentionalTestRollback();
+      });
+    } catch (e) {
+      if (!(e instanceof IntentionalTestRollback)) throw e;
+    }
+  });
+
   it("graduates station absence active -> suspect -> suspect+alarm -> inactive, and reactivates on return — §8.6", async () => {
     const db = getDb();
     try {
