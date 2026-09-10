@@ -1,0 +1,181 @@
+.console {
+  padding: 20px 20px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.fieldLabel {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin: 0 0 8px;
+}
+
+.locationCard {
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.locationButton {
+  appearance: none;
+  border: 1.5px solid var(--petrol-600);
+  background: none;
+  color: var(--petrol-700);
+  border-radius: 12px;
+  padding: 12px;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  text-align: center;
+}
+
+.locationButton:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+@media (prefers-color-scheme: dark) {
+  .locationButton {
+    color: var(--amber-500);
+    border-color: var(--amber-500);
+  }
+}
+
+.geoNote {
+  margin: 0;
+  font-size: 12px;
+  color: var(--warn-amber);
+  line-height: 1.5;
+}
+
+.localityLabel {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.textInput {
+  width: 100%;
+  font-family: inherit;
+  font-size: 14px;
+  padding: 12px 13px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--paper-raised);
+  color: var(--ink);
+}
+
+.chipset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  padding: 9px 15px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.chip[aria-pressed="true"] {
+  background: var(--petrol-900);
+  border-color: var(--petrol-900);
+  color: #fff;
+}
+
+.radiusTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+
+.radiusVal {
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--petrol-600);
+}
+
+@media (prefers-color-scheme: dark) {
+  .radiusVal {
+    color: var(--amber-500);
+  }
+}
+
+.vehicleToggle {
+  appearance: none;
+  border: 1.5px dashed var(--line);
+  background: none;
+  border-radius: 14px;
+  padding: 12px;
+  width: 100%;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--petrol-600);
+  cursor: pointer;
+}
+
+@media (prefers-color-scheme: dark) {
+  .vehicleToggle {
+    color: var(--amber-500);
+  }
+}
+
+.assumeNote {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--ink-soft);
+  background: var(--good-green-soft);
+  border-radius: 12px;
+  padding: 11px 13px;
+  line-height: 1.5;
+}
+
+.vehicleFields {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.formError {
+  margin: 0;
+  font-size: 13px;
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.cta {
+  appearance: none;
+  border: none;
+  border-radius: 14px;
+  padding: 16px;
+  width: 100%;
+  background: var(--amber-500);
+  color: #241902;
+  font-weight: 700;
+  font-size: 15.5px;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(240, 162, 2, 0.35);
+}
+
+.cta:hover {
+  background: var(--amber-700);
+  color: #fff;
+}
