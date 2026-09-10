@@ -29,7 +29,10 @@ import { loadNswLocalities } from "../infrastructure/locality/load-nsw-localitie
 import { loadNswTasPostcodes } from "../infrastructure/locality/load-nsw-tas-postcodes";
 import { checkRateLimit } from "../infrastructure/rate-limit/check-rate-limit";
 import { loadStationDisplayInfo } from "../infrastructure/repositories/station-search-repository";
+import type { HandlerResult } from "./http-handler-result";
 import { runSearch, type SearchOutcome } from "./search-service";
+
+export type { HandlerResult } from "./http-handler-result";
 
 type Db = Pick<PostgresJsDatabase, "select" | "selectDistinctOn" | "insert">;
 
@@ -57,12 +60,6 @@ const querySchema = z
       message: "Either both lat and lng, or locality, must be provided.",
     },
   );
-
-export interface HandlerResult {
-  status: number;
-  body: unknown;
-  headers?: Record<string, string>;
-}
 
 function errorResult(status: number, message: string): HandlerResult {
   return { status, body: { error: message } };

@@ -9,10 +9,12 @@ import {
 } from "./fuel-type-repository";
 import { loadKnownStationCodeToId, upsertStationsFromReferenceData } from "./station-repository";
 import {
+  loadDegradedIngestionDates,
   loadLastRetrievedAt,
   loadRecentFullSyncInsertedCounts,
   loadUnprocessedJournalReceivedAts,
 } from "./observability-repository";
+import { sydneyDateOf } from "../../domain/rollup/day-boundary";
 
 /**
  * Real Postgres, synthetic fixtures deliberately timestamped ahead of "now" (or with a
@@ -146,6 +148,51 @@ describe("observability-repository against real Postgres", () => {
 
         const counts = await loadRecentFullSyncInsertedCounts(tx, 2);
         expect(counts).toEqual([7, 42]);
+
+        throw new IntentionalTestRollback();
+      });
+    } catch (e) {
+      if (!(e instanceof IntentionalTestRollback)) throw e;
+    }
+  }, 30_000);
+
+  it("loadDegradedIngestionDates includes failed/partial new_prices & full_sync runs, excludes success and out-of-scope job types", async () => {
+    const db = getDb();
+    try {
+      await db.transaction(async (tx) => {
+        // Ahead of any real run — this window is guaranteed to contain only this test's fixtures.
+        const base = Date.now() + 400 * 24 * 60 * 60 * 1000;
+        const day = (offsetMs: number) => new Date(base + offsetMs);
+
+        async function insertRun(
+          jobType: "new_prices" | "full_sync" | "ref_data" | "rollup",
+          status: "success" | "failed" | "partial" | "skipped_budget" | "skipped_circuit",
+          startedAt: Date,
+        ) {
+          await tx.insert(ingestionRun).values({ jobType, status, startedAt });
+        }
+
+        const failedDay = day(0);
+        const partialDay = day(2 * 24 * 60 * 60 * 1000);
+        const successDay = day(4 * 24 * 60 * 60 * 1000);
+        const wrongJobTypeDay = day(6 * 24 * 60 * 60 * 1000);
+        const outOfRangeDay = day(-30 * 24 * 60 * 60 * 1000); // before `since` — must be excluded
+
+        await insertRun("new_prices", "failed", failedDay);
+        await insertRun("full_sync", "partial", partialDay);
+        await insertRun("new_prices", "success", successDay); // healthy — must not appear
+        await insertRun("ref_data", "failed", wrongJobTypeDay); // wrong job type — must not appear
+        await insertRun("new_prices", "failed", outOfRangeDay);
+
+        const since = day(-1 * 24 * 60 * 60 * 1000);
+        const until = day(10 * 24 * 60 * 60 * 1000);
+        const degradedDates = await loadDegradedIngestionDates(tx, since, until);
+
+        expect(degradedDates.has(sydneyDateOf(failedDay))).toBe(true);
+        expect(degradedDates.has(sydneyDateOf(partialDay))).toBe(true);
+        expect(degradedDates.has(sydneyDateOf(successDay))).toBe(false);
+        expect(degradedDates.has(sydneyDateOf(wrongJobTypeDay))).toBe(false);
+        expect(degradedDates.has(sydneyDateOf(outOfRangeDay))).toBe(false);
 
         throw new IntentionalTestRollback();
       });

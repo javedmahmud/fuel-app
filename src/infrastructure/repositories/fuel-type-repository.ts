@@ -59,3 +59,22 @@ export async function loadActiveFuelTypeCodeToId(db: Pick<PostgresJsDatabase, "s
     .where(eq(fuelType.isActive, true));
   return new Map(rows.map((r) => [r.sourceCode, r.id]));
 }
+
+export interface FuelTypeSummary {
+  id: string;
+  sourceCode: string;
+  displayName: string;
+}
+
+/** Full rows (not just the code->id map `loadActiveFuelTypeCodeToId` gives), keyed by id — the
+ * station detail endpoint (`21_DETAILED_DESIGN.md` §21.1, UC-05) needs `displayName` alongside
+ * each priced fuel type, not just enough to validate a query param. */
+export async function loadActiveFuelTypes(
+  db: Pick<PostgresJsDatabase, "select">,
+): Promise<Map<string, FuelTypeSummary>> {
+  const rows = await db
+    .select({ id: fuelType.id, sourceCode: fuelType.sourceCode, displayName: fuelType.displayName })
+    .from(fuelType)
+    .where(eq(fuelType.isActive, true));
+  return new Map(rows.map((r) => [r.id, r]));
+}
