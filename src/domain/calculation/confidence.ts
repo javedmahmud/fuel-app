@@ -6,6 +6,13 @@ import type { Mode } from "./types";
 
 export type ConfidenceLevel = "high" | "medium" | "low";
 
+/** §9.7's `medium` tier's day requirement — also reused by
+ * `src/application/handle-station-history-request.ts` as the "insufficient history" gate for
+ * `GET /stations/{id}/history` (`21_DETAILED_DESIGN.md` §21.1: "fewer than the
+ * confidence-threshold days (§9.7)"), so both consumers read the same threshold rather than two
+ * independently-typed magic numbers that could drift apart. */
+export const MEDIUM_CONFIDENCE_MIN_HISTORY_DAYS = 7;
+
 export interface ConfidenceInput {
   /** Days of history in the averaging window — from `daily_price_rollup`'s row count, not raw
    * observations. */
@@ -32,7 +39,11 @@ export function computeConfidence(input: ConfidenceInput): ConfidenceLevel {
     return "high";
   }
 
-  if (historyDays >= 7 && candidateCount >= 2 && priceAgeHours < 7 * 24) {
+  if (
+    historyDays >= MEDIUM_CONFIDENCE_MIN_HISTORY_DAYS &&
+    candidateCount >= 2 &&
+    priceAgeHours < 7 * 24
+  ) {
     return "medium";
   }
 
