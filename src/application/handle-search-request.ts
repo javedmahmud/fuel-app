@@ -34,12 +34,10 @@ import { z } from "zod";
 import type { LatLng } from "../domain/calculation/types";
 import { explainRecommendation } from "../domain/explanation/template-explainer";
 import { isWithinNswTasBounds } from "../domain/geo/nsw-tas-bounds";
-import { resolveLocality } from "../domain/locality/locality-resolver";
-import { loadNswLocalities } from "../infrastructure/locality/load-nsw-localities";
-import { loadNswTasPostcodes } from "../infrastructure/locality/load-nsw-tas-postcodes";
 import { checkRateLimit } from "../infrastructure/rate-limit/check-rate-limit";
 import { loadStationDisplayInfo } from "../infrastructure/repositories/station-search-repository";
 import type { HandlerResult } from "./http-handler-result";
+import { resolveLocalityOrPostcode } from "./resolve-locality-or-postcode";
 import { runSearch, type SearchOutcome } from "./search-service";
 
 export type { HandlerResult } from "./http-handler-result";
@@ -86,20 +84,6 @@ function errorResult(status: number, message: string): HandlerResult {
   return { status, body: { error: message } };
 }
 
-/** Tries the `locality` param as a suburb name first, then as a postcode — one input field
- * resolved against both static datasets (`feature/locality-resolver`,
- * `feature/postcode-resolver`), exactly the "combined helper" both of those branches deferred to
- * whichever branch actually consumes them. */
-function resolveOrigin(locality: string): LatLng | undefined {
-  const bySuburb = resolveLocality(locality, loadNswLocalities());
-  if (bySuburb) return { latitude: bySuburb.latitude, longitude: bySuburb.longitude };
-
-  const byPostcode = resolveLocality(locality, loadNswTasPostcodes());
-  if (byPostcode) return { latitude: byPostcode.latitude, longitude: byPostcode.longitude };
-
-  return undefined;
-}
-
 export async function handleSearchRequest(
   db: Db,
   searchParams: URLSearchParams,
@@ -129,7 +113,7 @@ export async function handleSearchRequest(
 
   let origin: LatLng;
   if (params.locality) {
-    const resolved = resolveOrigin(params.locality);
+    const resolved = resolveLocalityOrPostcode(params.locality);
     if (!resolved) {
       return errorResult(400, `Could not resolve locality or postcode "${params.locality}".`);
     }

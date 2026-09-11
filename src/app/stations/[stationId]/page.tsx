@@ -70,14 +70,18 @@ export default async function StationDetailsPage(props: PageProps<"/stations/[st
   const { stationId } = await props.params;
   const searchParams = toSearchParams(await props.searchParams);
   const now = new Date();
-  // Set by each station card's link on the Results screen (`fix/results-ux-feedback`) — the
-  // exact `/search?...` URL the driver came from, so "back" returns to those results (same
-  // query, same sort) instead of a blank Home screen. The label says so too — real feedback that
-  // "← Search" read as "go to the search form," not "go back to your results": "the top shows
-  // search as a link to go back it should say search result which takes them back to their
-  // search results."
+  // Set by each station card's link on the Results screen (`fix/results-ux-feedback`) and the
+  // Commute Mode screen (`feature/commute-screen`) — the exact `/search?...` or `/commute?...`
+  // URL the driver came from, so "back" returns to those results (same query) instead of a blank
+  // Home screen. The label says so too — real feedback that "← Search" read as "go to the search
+  // form," not "go back to your results": "the top shows search as a link to go back it should
+  // say search result which takes them back to their search results."
   const backHref = resolveBackHref(searchParams.get("from") ?? undefined);
-  const backLabel = backHref.startsWith("/search?") ? "← Search results" : "← Search";
+  const backLabel = backHref.startsWith("/search?")
+    ? "← Search results"
+    : backHref.startsWith("/commute?")
+      ? "← Commute results"
+      : "← Search";
 
   const result = await handleStationDetailRequest(getDb(), stationId, searchParams, now);
 
@@ -100,7 +104,11 @@ export default async function StationDetailsPage(props: PageProps<"/stations/[st
               This station may have been removed or the link is out of date.
             </p>
             <Link href={backHref} className={styles.bannerLink}>
-              {backHref.startsWith("/search?") ? "← Back to search results" : "← Back to search"}
+              {backHref.startsWith("/search?")
+                ? "← Back to search results"
+                : backHref.startsWith("/commute?")
+                  ? "← Back to commute results"
+                  : "← Back to search"}
             </Link>
           </div>
         )}

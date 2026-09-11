@@ -31,6 +31,9 @@ export default async function HomePage() {
 
       <main>
         <SearchForm fuelTypes={fuelTypes} />
+        <Link href="/commute" className={styles.commuteLink}>
+          🚗 Driving somewhere specific? Try Commute Mode →
+        </Link>
       </main>
     </div>
   );

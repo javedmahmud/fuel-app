@@ -32,6 +32,8 @@ import { z } from "zod";
 
 import { runCommute, type CommuteOutcome } from "./commute-service";
 import type { HandlerResult } from "./http-handler-result";
+import { resolveLocalityOrPostcode } from "./resolve-locality-or-postcode";
+import type { LatLng } from "../domain/calculation/types";
 import { explainRecommendation } from "../domain/explanation/template-explainer";
 import { isWithinNswTasBounds } from "../domain/geo/nsw-tas-bounds";
 import { checkRateLimit } from "../infrastructure/rate-limit/check-rate-limit";
@@ -54,11 +56,20 @@ const RATE_LIMIT_WINDOW_SECONDS = 60;
 const MAX_DETOUR_KM = 50;
 const MAX_RESULTS = 50; // §13.9's "Result cap" — the hard ceiling, same figure as /search's
 
-const latLngSchema = z.object({ lat: z.number(), lng: z.number() });
+// Either a raw coordinate or a free-text locality/postcode — the same "one field, two readings"
+// shape `/search`'s own `locality` param has, extended to two fields here since a commute needs
+// both an origin and a destination and neither has a natural browser-geolocation equivalent for
+// "destination." `feature/commute-screen`'s own form is the actual reason this exists — nobody
+// types raw lat/lng into a text field.
+const pointSchema = z.union([
+  z.object({ lat: z.number(), lng: z.number() }),
+  z.object({ locality: z.string().trim().min(1) }),
+]);
+type PointInput = z.infer<typeof pointSchema>;
 
 const commuteBodySchema = z.object({
-  origin: latLngSchema,
-  destination: latLngSchema,
+  origin: pointSchema,
+  destination: pointSchema,
   fuelType: z.string().trim().min(1),
   // Required, not defaulted — UC-02's own product definition (`02_USE_CASES.md`): "User enters
   // origin, destination, fuel type and max detour." Unlike /search's radiusKm, there's no
@@ -75,6 +86,32 @@ const commuteBodySchema = z.object({
 
 function errorResult(status: number, message: string): HandlerResult {
   return { status, body: { error: message } };
+}
+
+/** Resolves one `pointSchema` input to real coordinates, or a field-specific error message.
+ * Bounds-checks the raw-coordinate path only — a locality/postcode that resolved at all is
+ * already guaranteed NSW/TAS by construction (both static datasets are NSW/TAS-only), matching
+ * `handle-search-request.ts`'s own `locality` path, which doesn't re-check bounds after a
+ * successful resolution either. */
+function resolvePoint(
+  point: PointInput,
+  fieldName: "origin" | "destination",
+): { point: LatLng } | { error: string } {
+  if ("locality" in point) {
+    const resolved = resolveLocalityOrPostcode(point.locality);
+    if (!resolved) {
+      return {
+        error: `Could not resolve ${fieldName} locality or postcode "${point.locality}".`,
+      };
+    }
+    return { point: resolved };
+  }
+
+  const latLng: LatLng = { latitude: point.lat, longitude: point.lng };
+  if (!isWithinNswTasBounds(latLng)) {
+    return { error: `${fieldName} lat/lng must be within the NSW/TAS bounding box.` };
+  }
+  return { point: latLng };
 }
 
 export async function handleCommuteRequest(
@@ -104,14 +141,16 @@ export async function handleCommuteRequest(
   }
   const body = parsed.data;
 
-  const origin = { latitude: body.origin.lat, longitude: body.origin.lng };
-  const destination = { latitude: body.destination.lat, longitude: body.destination.lng };
-  if (!isWithinNswTasBounds(origin)) {
-    return errorResult(400, "origin lat/lng must be within the NSW/TAS bounding box.");
+  const resolvedOrigin = resolvePoint(body.origin, "origin");
+  if ("error" in resolvedOrigin) {
+    return errorResult(400, resolvedOrigin.error);
   }
-  if (!isWithinNswTasBounds(destination)) {
-    return errorResult(400, "destination lat/lng must be within the NSW/TAS bounding box.");
+  const resolvedDestination = resolvePoint(body.destination, "destination");
+  if ("error" in resolvedDestination) {
+    return errorResult(400, resolvedDestination.error);
   }
+  const origin = resolvedOrigin.point;
+  const destination = resolvedDestination.point;
 
   const hasVehicleProfile =
     body.vehicle?.tankCapacityL !== undefined || body.vehicle?.currentFuelFraction !== undefined;
