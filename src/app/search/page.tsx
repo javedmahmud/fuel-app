@@ -14,6 +14,7 @@ import { handleSearchRequest } from "../../application/handle-search-request";
 import { priceAgeBand } from "../../domain/calculation/freshness";
 import { getDb } from "../../infrastructure/db/client";
 import { formatRelativeTime } from "../_lib/format-relative-time";
+import { ResultsLimitSelector } from "../_components/results-limit-selector";
 import { StationCard, type StationCardData } from "../_components/station-card";
 import styles from "./search.module.css";
 
@@ -40,6 +41,10 @@ interface SearchResultEntry {
 
 interface SearchSuccessBody {
   results: SearchResultEntry[];
+  // Count of eligible candidates before the driver's own display `limit` is applied — lets the
+  // summary line say "Showing 5 of 27" honestly, rather than just "5" (real feedback: "there are
+  // 30 results being returned it is a bit overwhelming").
+  totalEligible: number;
   engineVersion: string | null;
   generatedAt: string;
 }
@@ -131,6 +136,11 @@ function ResultsList({
   // feedback this fixes: "if I select station for details it should take to screen with search
   // results not initial search screen."
   const returnTo = `/search?${searchParams.toString()}`;
+  // Mirrors `handle-search-request.ts`'s own query validation (`limit: z.enum(["5", "10",
+  // "all"])`) so the selector's displayed value always matches what the server actually applied,
+  // including the unspecified case (server defaults to "5" too).
+  const rawLimit = searchParams.get("limit");
+  const currentLimit: "5" | "10" | "all" = rawLimit === "10" || rawLimit === "all" ? rawLimit : "5";
 
   if (body.results.length === 0) {
     return (
@@ -170,10 +180,15 @@ function ResultsList({
 
   return (
     <>
-      <p className={styles.resultsSummary}>
-        {fuelType || "Fuel"} · within {radiusKm} km · {body.results.length} station
-        {body.results.length === 1 ? "" : "s"} found
-      </p>
+      <div className={styles.resultsHeader}>
+        <p className={styles.resultsSummary}>
+          {fuelType || "Fuel"} · within {radiusKm} km ·{" "}
+          {body.results.length === body.totalEligible
+            ? `${body.totalEligible} station${body.totalEligible === 1 ? "" : "s"} found`
+            : `Showing ${body.results.length} of ${body.totalEligible} stations found`}
+        </p>
+        <ResultsLimitSelector currentLimit={currentLimit} searchParams={searchParams} />
+      </div>
       <ul className={styles.list}>
         {cards.map((card) => (
           <StationCard key={card.stationId} {...card} />
