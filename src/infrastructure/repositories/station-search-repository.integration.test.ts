@@ -6,7 +6,7 @@ import { fuelPriceObservation, fuelType, station } from "../db/schema";
 import type { FuelType, Station } from "../fuel-api/types";
 import { upsertFuelTypesFromReferenceData } from "./fuel-type-repository";
 import { upsertStationsFromReferenceData } from "./station-repository";
-import { findNearbyCandidates } from "./station-search-repository";
+import { findCorridorCandidates, findNearbyCandidates } from "./station-search-repository";
 
 /**
  * Real Postgres, synthetic fixtures, zero API quota — same rolled-back-transaction pattern used
@@ -206,6 +206,132 @@ describe("findNearbyCandidates against real Postgres", () => {
 
         expect(mine).toBeDefined();
         expect(mine?.distanceKm).toBeCloseTo(8.148146588210025, 3);
+
+        throw new IntentionalTestRollback();
+      });
+    } catch (e) {
+      if (!(e instanceof IntentionalTestRollback)) throw e;
+    }
+  }, 30_000);
+});
+
+describe("findCorridorCandidates against real Postgres (feature/commute-api)", () => {
+  // Sydney -> Canberra, real coordinates — same corridor used throughout geo.test.ts and
+  // rank-candidates.test.ts's own real-world sanity checks, kept consistent across all three so
+  // the numbers (Goulburn ~12.47km off-route, Wollongong ~29.16km off-route) mean the same thing
+  // everywhere they're used.
+  const sydney = { latitude: -33.8688, longitude: 151.2093 };
+  const canberra = { latitude: -35.3081, longitude: 149.1244 };
+
+  it("finds a station within the corridor width, with the correct distance-to-route", async () => {
+    const db = getDb();
+    try {
+      await db.transaction(async (tx) => {
+        const goulburn = testStation({ latitude: -34.7539, longitude: 149.7161 });
+        const { stationId, fuelTypeId } = await setupStationAndFuelType(tx, goulburn);
+        await insertPrice(tx, stationId, fuelTypeId, 1799);
+
+        const results = await findCorridorCandidates(tx, sydney, canberra, 20, fuelTypeId);
+        const mine = results.find((r) => r.stationId === stationId);
+
+        expect(mine).toBeDefined();
+        expect(mine?.distanceToRouteKm).toBeCloseTo(12.47, 0);
+        expect(mine?.price.priceTenthsCpl).toBe(1799);
+
+        throw new IntentionalTestRollback();
+      });
+    } catch (e) {
+      if (!(e instanceof IntentionalTestRollback)) throw e;
+    }
+  }, 30_000);
+
+  it("excludes a station beyond the corridor width, even one within the prefilter's bounding box", async () => {
+    const db = getDb();
+    try {
+      await db.transaction(async (tx) => {
+        // Wollongong: ~29.16km off the Sydney-Canberra line (confirmed in geo.test.ts) — well
+        // inside corridorBoundingBox's generous rectangle for a 20km width (which covers both
+        // endpoints' own 20km circles), but outside the true 20km-wide corridor itself. Exactly
+        // "the box is a superset, trim it" in practice, for the corridor case.
+        const wollongong = testStation({ latitude: -34.4278, longitude: 150.8931 });
+        const { stationId, fuelTypeId } = await setupStationAndFuelType(tx, wollongong);
+        await insertPrice(tx, stationId, fuelTypeId, 1799);
+
+        const results = await findCorridorCandidates(tx, sydney, canberra, 20, fuelTypeId);
+        expect(results.find((r) => r.stationId === stationId)).toBeUndefined();
+
+        throw new IntentionalTestRollback();
+      });
+    } catch (e) {
+      if (!(e instanceof IntentionalTestRollback)) throw e;
+    }
+  }, 30_000);
+
+  it("excludes an inactive station and includes a suspect one, both on-route", async () => {
+    const db = getDb();
+    try {
+      await db.transaction(async (tx) => {
+        const inactive = testStation({ latitude: -34.7539, longitude: 149.7161 });
+        const suspect = testStation({ latitude: -34.75, longitude: 149.72 });
+
+        const inactiveIds = await setupStationAndFuelType(tx, inactive);
+        await insertPrice(tx, inactiveIds.stationId, inactiveIds.fuelTypeId, 1799);
+        await tx
+          .update(station)
+          .set({ lifecycleState: "inactive" })
+          .where(sql`${station.id} = ${inactiveIds.stationId}`);
+
+        const suspectIds = await setupStationAndFuelType(tx, suspect);
+        await insertPrice(tx, suspectIds.stationId, suspectIds.fuelTypeId, 1799);
+        await tx
+          .update(station)
+          .set({ lifecycleState: "suspect" })
+          .where(sql`${station.id} = ${suspectIds.stationId}`);
+
+        const inactiveResults = await findCorridorCandidates(
+          tx,
+          sydney,
+          canberra,
+          20,
+          inactiveIds.fuelTypeId,
+        );
+        expect(inactiveResults.find((r) => r.stationId === inactiveIds.stationId)).toBeUndefined();
+
+        const suspectResults = await findCorridorCandidates(
+          tx,
+          sydney,
+          canberra,
+          20,
+          suspectIds.fuelTypeId,
+        );
+        expect(suspectResults.find((r) => r.stationId === suspectIds.stationId)).toBeDefined();
+
+        throw new IntentionalTestRollback();
+      });
+    } catch (e) {
+      if (!(e instanceof IntentionalTestRollback)) throw e;
+    }
+  }, 30_000);
+
+  it("excludes an on-route station that has no price for the requested fuel type", async () => {
+    const db = getDb();
+    try {
+      await db.transaction(async (tx) => {
+        const goulburn = testStation({ latitude: -34.7539, longitude: 149.7161 });
+        const { stationId, fuelTypeId } = await setupStationAndFuelType(tx, goulburn);
+        const otherFt: FuelType = {
+          sourceCode: `TESTFT_OTHER_${Date.now()}`,
+          displayName: "Other",
+        };
+        await upsertFuelTypesFromReferenceData(tx, [otherFt]);
+        const [otherFtRow] = await tx
+          .select({ id: fuelType.id })
+          .from(fuelType)
+          .where(sql`${fuelType.sourceCode} = ${otherFt.sourceCode}`);
+        await insertPrice(tx, stationId, otherFtRow.id, 1799);
+
+        const results = await findCorridorCandidates(tx, sydney, canberra, 20, fuelTypeId);
+        expect(results.find((r) => r.stationId === stationId)).toBeUndefined();
 
         throw new IntentionalTestRollback();
       });

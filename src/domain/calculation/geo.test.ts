@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   additionalRoundTripKm,
   boundingBox,
+  corridorBoundingBox,
   corridorDetourKm,
   distanceToSegmentKm,
   haversineDistanceKm,
@@ -247,5 +248,49 @@ describe("corridorDetourKm — UC-02's actual (not doubled) detour", () => {
     expect(goulburnDetour).toBeCloseTo(1.59, 0);
     expect(wollongongDetour).toBeCloseTo(8.29, 0);
     expect(goulburnDetour).toBeLessThan(wollongongDetour);
+  });
+});
+
+describe("corridorBoundingBox — the DB prefilter for corridor search (feature/commute-api)", () => {
+  it("contains both endpoints' own boundingBox regions", () => {
+    const origin = { latitude: -33.8688, longitude: 151.2093 }; // Sydney
+    const destination = { latitude: -35.3081, longitude: 149.1244 }; // Canberra
+    const widthKm = 15;
+
+    const corridor = corridorBoundingBox(origin, destination, widthKm);
+    const originBox = boundingBox(origin, widthKm);
+    const destinationBox = boundingBox(destination, widthKm);
+
+    for (const box of [originBox, destinationBox]) {
+      expect(corridor.minLat).toBeLessThanOrEqual(box.minLat);
+      expect(corridor.maxLat).toBeGreaterThanOrEqual(box.maxLat);
+      expect(corridor.minLng).toBeLessThanOrEqual(box.minLng);
+      expect(corridor.maxLng).toBeGreaterThanOrEqual(box.maxLng);
+    }
+  });
+
+  it("is a true superset of the corridor: every point isWithinCorridor accepts falls inside this box", () => {
+    // Direct check of the actual reason this function exists, matching boundingBox's own
+    // "every real candidate falls inside the box" test — Goulburn, already confirmed elsewhere
+    // in this file to be ~12.47km off the Sydney-Canberra line, must land inside a 15km-wide
+    // corridor's prefilter box.
+    const origin = { latitude: -33.8688, longitude: 151.2093 };
+    const destination = { latitude: -35.3081, longitude: 149.1244 };
+    const goulburn = { latitude: -34.7539, longitude: 149.7161 };
+    const widthKm = 15;
+
+    expect(isWithinCorridor(goulburn, origin, destination, widthKm)).toBe(true);
+
+    const box = corridorBoundingBox(origin, destination, widthKm);
+    expect(goulburn.latitude).toBeGreaterThanOrEqual(box.minLat);
+    expect(goulburn.latitude).toBeLessThanOrEqual(box.maxLat);
+    expect(goulburn.longitude).toBeGreaterThanOrEqual(box.minLng);
+    expect(goulburn.longitude).toBeLessThanOrEqual(box.maxLng);
+  });
+
+  it("is symmetric — swapping origin and destination produces the same box", () => {
+    const a = { latitude: -33.8688, longitude: 151.2093 };
+    const b = { latitude: -35.3081, longitude: 149.1244 };
+    expect(corridorBoundingBox(a, b, 15)).toEqual(corridorBoundingBox(b, a, 15));
   });
 });
