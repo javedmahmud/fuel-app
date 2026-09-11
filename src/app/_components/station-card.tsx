@@ -3,7 +3,16 @@
  * effective cost, freshness band, relative time). `21_DETAILED_DESIGN.md` §21.9's UI
  * principles: "Timestamp visible everywhere a price appears" and "Explain why, from reason
  * codes, never free text."
+ *
+ * Each card links to `/stations/{id}` (`feature/station-details-screen`) — that screen, not this
+ * one, owns the real "Directions" hand-off (§21.9 assigns it there specifically, using the
+ * station's own precise `location`, which `/search`'s response doesn't carry). This card
+ * previously linked "Directions" straight to a Google Maps *name* search as a stopgap before
+ * that screen existed; removed now that a precise, in-app destination exists to send people to
+ * instead.
  */
+import Link from "next/link";
+
 import type { PriceAgeBand } from "../../domain/calculation/freshness";
 import { reasonCodeBadges } from "../_lib/reason-code-labels";
 import styles from "./station-card.module.css";
@@ -31,11 +40,6 @@ const FRESHNESS_LABEL: Record<PriceAgeBand, string> = {
   long_unchanged: "Confirm at the pump",
 };
 
-function directionsUrl(name: string | null, brand: string | null): string {
-  const query = encodeURIComponent(name ?? brand ?? "fuel station");
-  return `https://www.google.com/maps/search/?api=1&query=${query}`;
-}
-
 export function StationCard(data: StationCardData) {
   const displayName = data.name ?? data.brand ?? "Unnamed station";
   const badges = reasonCodeBadges(data.reasonCodes);
@@ -43,7 +47,7 @@ export function StationCard(data: StationCardData) {
   return (
     <li className={`${styles.row} ${data.isRecommended ? styles.pick : ""}`}>
       <div className={styles.rank}>{data.rank}</div>
-      <div className={styles.id}>
+      <Link href={`/stations/${data.stationId}`} className={styles.id}>
         <div className={styles.name}>{displayName}</div>
         {data.brand && <div className={styles.brand}>{data.brand}</div>}
         <div className={styles.meta}>
@@ -65,17 +69,8 @@ export function StationCard(data: StationCardData) {
             ))}
           </div>
         )}
-        {data.isRecommended && (
-          <a
-            className={styles.directions}
-            href={directionsUrl(data.name, data.brand)}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Directions →
-          </a>
-        )}
-      </div>
+        <div className={styles.directions}>Station details →</div>
+      </Link>
       <div className={styles.priceBlock}>
         <div className={styles.cpl}>
           {data.centsPerLitre.toFixed(1)}
