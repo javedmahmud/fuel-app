@@ -10,9 +10,10 @@
  * resolution happens server-side in `handleSearchRequest`, same as any other caller of that API.
  */
 import { useRouter } from "next/navigation";
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 import type { FuelTypeSummary } from "../../infrastructure/repositories/fuel-type-repository";
+import { loadSettings } from "../_lib/user-settings";
 import styles from "./search-form.module.css";
 
 const DEFAULT_RADIUS_KM = 5;
@@ -40,6 +41,41 @@ export function SearchForm({ fuelTypes }: { fuelTypes: FuelTypeSummary[] }) {
   const [currentFuelPercent, setCurrentFuelPercent] = useState("");
   const [consumptionL100km, setConsumptionL100km] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+
+  useEffect(
+    () => {
+      // Saved settings (feature/settings-screen) only ever exist in localStorage, unavailable
+      // during the server render this Client Component also gets — reading them here (after
+      // mount) rather than in a useState initializer avoids a hydration mismatch, the standard
+      // reason this pattern exists. There's no render-time equivalent for a one-shot "hydrate
+      // from an external store after mount" read the way there would be for a value derivable
+      // from props/state, so — same justified exception as settings-form.tsx's own loading
+      // effect — the setState calls below are deliberate, not something to restructure around.
+      // Each field only overrides its own already-computed default, so this never clobbers state
+      // a user could plausibly have touched before mount finishes.
+      /* eslint-disable react-hooks/set-state-in-effect */
+      const settings = loadSettings();
+      if (settings.fuelType && fuelTypes.some((f) => f.sourceCode === settings.fuelType)) {
+        setFuelType(settings.fuelType);
+      }
+      if (settings.radiusKm !== null) setRadiusKm(settings.radiusKm);
+      if (settings.defaultLocality) setLocality(settings.defaultLocality);
+      if (settings.vehicle) {
+        setShowVehicle(true);
+        setTankCapacityL(String(settings.vehicle.tankCapacityL));
+        setCurrentFuelPercent(String(Math.round(settings.vehicle.currentFuelFraction * 100)));
+        if (settings.vehicle.consumptionL100km !== null) {
+          setConsumptionL100km(String(settings.vehicle.consumptionL100km));
+        }
+      }
+      /* eslint-enable react-hooks/set-state-in-effect */
+    },
+    // fuelTypes is the server-provided list, stable for the component's lifetime; re-running
+    // this on every render would keep re-applying saved settings over whatever the driver has
+    // since typed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
 
   function useMyLocation() {
     if (!("geolocation" in navigator)) {

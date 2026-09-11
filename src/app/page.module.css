@@ -8,6 +8,22 @@
   background: var(--petrol-900);
   color: #fff;
   padding: 24px 20px 18px;
+  position: relative;
+}
+
+.backLink {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #bfdad6;
+}
+
+.settingsLink {
+  position: absolute;
+  top: 24px;
+  right: 20px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #bfdad6;
 }
 
 .wordmark {

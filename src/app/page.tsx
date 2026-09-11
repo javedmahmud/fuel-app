@@ -3,6 +3,8 @@
  * (the Stack section's default: "most screens are read-mostly and server-render cleanly"); the
  * only client-side piece is `SearchForm` (geolocation + form state).
  */
+import Link from "next/link";
+
 import { SearchForm } from "./_components/search-form";
 import { getDb } from "../infrastructure/db/client";
 import { loadActiveFuelTypes } from "../infrastructure/repositories/fuel-type-repository";
@@ -18,6 +20,9 @@ export default async function HomePage() {
   return (
     <div className={styles.app}>
       <header className={styles.masthead}>
+        <Link href="/settings" className={styles.settingsLink}>
+          ⚙ Settings
+        </Link>
         <p className={styles.wordmark}>
           Fuel <em>Intelligence</em>
         </p>
