@@ -1,0 +1,226 @@
+.app {
+  max-width: 460px;
+  margin: 0 auto;
+  min-height: 100vh;
+}
+
+.masthead {
+  background: var(--petrol-900);
+  color: #fff;
+  padding: 16px 20px;
+}
+
+.backLink {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #bfdad6;
+}
+
+.wordmark {
+  font-family: "Big Shoulders Display", sans-serif;
+  font-weight: 800;
+  font-size: 20px;
+  letter-spacing: 0.2px;
+  text-transform: uppercase;
+  margin: 6px 0 0;
+}
+
+.wordmark em {
+  font-style: normal;
+  color: var(--amber-500);
+}
+
+.main {
+  padding-bottom: 32px;
+}
+
+.hero {
+  margin: 16px 20px 0;
+  padding: 18px;
+  border-radius: 14px;
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+}
+
+.name {
+  font-family: "Big Shoulders Display", sans-serif;
+  font-weight: 800;
+  font-size: 22px;
+  text-wrap: balance;
+}
+
+.brand {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-soft);
+  margin-top: 2px;
+}
+
+.address {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  margin-top: 6px;
+}
+
+.distance {
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin-top: 8px;
+}
+
+.directionsButton {
+  display: block;
+  margin: 14px 20px 0;
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--petrol-900);
+  color: #fff;
+  text-align: center;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.priceList {
+  list-style: none;
+  margin: 16px 20px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.priceRow {
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--paper-raised);
+}
+
+.priceLink {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px;
+  gap: 12px;
+}
+
+.priceLeft {
+  min-width: 0;
+}
+
+.fuelName {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.meta {
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  margin-top: 4px;
+}
+
+.staleMeta {
+  font-size: 11.5px;
+  color: var(--warn-amber);
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.priceRight {
+  text-align: right;
+  flex: none;
+}
+
+.cpl {
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--ink);
+}
+
+.cpl sup {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.historyLink {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--petrol-600);
+  margin-top: 4px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .historyLink {
+    color: var(--amber-500);
+  }
+}
+
+.footnote {
+  margin: 18px 20px 6px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--line);
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  line-height: 1.6;
+}
+
+.banner {
+  margin: 16px 20px 0;
+  padding: 16px;
+  border-radius: 14px;
+  background: var(--warn-amber-soft);
+  border: 1px solid var(--warn-amber);
+}
+
+.bannerTitle {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--warn-amber);
+  margin: 0 0 4px;
+}
+
+.bannerBody {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.bannerLink {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--petrol-600);
+}
+
+@media (prefers-color-scheme: dark) {
+  .bannerLink {
+    color: var(--amber-500);
+  }
+}
+
+.emptyState {
+  margin: 16px 20px 0;
+  padding: 24px 20px;
+  text-align: center;
+  border-radius: 14px;
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+}
+
+.emptyTitle {
+  font-weight: 700;
+  font-size: 14px;
+  margin: 0 0 4px;
+}
+
+.emptyBody {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  margin: 0;
+  line-height: 1.5;
+}
