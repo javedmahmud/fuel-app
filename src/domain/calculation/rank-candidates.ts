@@ -64,11 +64,26 @@ export interface LocalAreaContext {
   closesTenthsInDayOrder: readonly number[];
 }
 
+/**
+ * How a candidate's round-trip detour is computed — the one seam between this pipeline's
+ * eligibility/cost/ranking logic (mode-agnostic) and the two genuinely different geometries that
+ * feed it. Defaults to `originRadialDetourKm` (nearby search, UC-01, §9.4.2's ×2 round-trip
+ * convention); UC-02's commute mode (`feature/commute-api`) supplies `corridorDetourKm` instead,
+ * via `geo.ts`. Kept as an injected function rather than a `mode: "radial" | "corridor"` flag so
+ * this module never needs to know commute mode exists — same "domain has no outgoing arrows"
+ * discipline (`05_CONTEXT_AND_CONTAINERS.md` §5.3) applied to a second use case, not just I/O.
+ */
+export type DetourKmStrategy = (origin: LatLng, candidateLocation: LatLng) => number;
+
+const originRadialDetourKm: DetourKmStrategy = (origin, candidateLocation) =>
+  additionalRoundTripKm(haversineDistanceKm(origin, candidateLocation));
+
 export interface RankCandidatesInput {
   candidates: readonly CandidateStation[];
   origin: LatLng;
   /** Round-trip cap, matching `additionalRoundTripKm`'s own round-trip convention (§9.4.2) —
-   * not a one-way distance limit. */
+   * not a one-way distance limit. Compared against whatever `detourKm` below produces, so the
+   * same cap works unchanged for both nearby-search and commute mode. */
   maxDetourKm: number;
   /** `null` means no vehicle profile at all — comparison mode, unconditionally (§9.4.4). A
    * profile that exists but is missing tank capacity or current fraction still resolves to
@@ -78,6 +93,9 @@ export interface RankCandidatesInput {
   localArea: LocalAreaContext;
   preferredBrand?: string;
   eligibilityMaxAgeDays?: number;
+  /** Defaults to `originRadialDetourKm` — every existing caller (UC-01 search) is unaffected by
+   * this field's existence unless it opts in. */
+  detourKm?: DetourKmStrategy;
   now: Date;
 }
 
@@ -135,13 +153,13 @@ function isEligible(
   candidate: CandidateStation,
   origin: LatLng,
   maxDetourKm: number,
+  detourKm: DetourKmStrategy,
   eligibilityMaxAgeDays: number,
   now: Date,
 ): boolean {
   // §9.9's flowchart, in order — a candidate must pass every gate.
   if (!candidate.price) return false; // sells selected fuel type?
-  const distanceKm = haversineDistanceKm(origin, candidate.location);
-  if (additionalRoundTripKm(distanceKm) > maxDetourKm) return false; // within max detour?
+  if (detourKm(origin, candidate.location) > maxDetourKm) return false; // within max detour?
   if (!isFreshEnoughForEligibility(candidate.price.sourceReportedAt, now, eligibilityMaxAgeDays)) {
     return false; // price within staleness cutoff?
   }
@@ -157,10 +175,15 @@ function computeMetrics(
   origin: LatLng,
   litres: number,
   consumptionLPer100km: number,
+  detourKm: DetourKmStrategy,
 ): RankedCandidateMetrics {
   const price = candidate.price as NonNullable<CandidateStation["price"]>; // guaranteed by isEligible
+  // distanceKm always means "straight-line distance from origin," in both modes — only the
+  // round-trip detour figure differs by mode (originRadialDetourKm vs corridorDetourKm). It's
+  // still meaningful display/tie-breaker information for a commute candidate (§9.9's tie-breaker
+  // #1 reads it as "shorter [origin] distance", unchanged).
   const distanceKm = haversineDistanceKm(origin, candidate.location);
-  const roundTripKm = additionalRoundTripKm(distanceKm);
+  const roundTripKm = detourKm(origin, candidate.location);
   const fillCost = fillCostCents(litres, price.priceTenthsCpl);
   const extraCost = extraFuelCostCents(roundTripKm, consumptionLPer100km, price.priceTenthsCpl);
   return {
@@ -281,6 +304,7 @@ export function rankCandidates(
   input: RankCandidatesInput,
 ): Result<RecommendationResult, RankCandidatesError> {
   const eligibilityMaxAgeDays = input.eligibilityMaxAgeDays ?? DEFAULT_ELIGIBILITY_MAX_AGE_DAYS;
+  const detourKm = input.detourKm ?? originRadialDetourKm;
 
   // §9.4.4: mode is decided purely by whether litresRequired can produce a concrete figure —
   // "no profile" and "profile present but incomplete" both correctly collapse to comparison
@@ -299,7 +323,7 @@ export function rankCandidates(
   const consumptionLPer100km = suppliedConsumption ?? DEFAULT_CONSUMPTION_L_PER_100KM;
 
   const eligible = input.candidates.filter((c) =>
-    isEligible(c, input.origin, input.maxDetourKm, eligibilityMaxAgeDays, input.now),
+    isEligible(c, input.origin, input.maxDetourKm, detourKm, eligibilityMaxAgeDays, input.now),
   );
 
   if (eligible.length === 0) {
@@ -308,7 +332,7 @@ export function rankCandidates(
 
   const computed: ComputedCandidate[] = eligible.map((station) => ({
     station,
-    metrics: computeMetrics(station, input.origin, litres, consumptionLPer100km),
+    metrics: computeMetrics(station, input.origin, litres, consumptionLPer100km, detourKm),
   }));
 
   const ranked = [...computed].sort((a, b) =>

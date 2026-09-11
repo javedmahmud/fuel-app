@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { corridorDetourKm } from "./geo";
 import {
   rankCandidates,
   type CandidateStation,
+  type DetourKmStrategy,
   type LocalAreaContext,
   type RankCandidatesInput,
 } from "./rank-candidates";
@@ -332,5 +334,77 @@ describe("rankCandidates — determinism (§9.1)", () => {
       ],
     });
     expect(rankCandidates(input)).toEqual(rankCandidates(input));
+  });
+});
+
+describe("rankCandidates — detourKm strategy seam (feature/commute-geometry)", () => {
+  it("defaults to the origin-radial ×2 round trip when no strategy is supplied — regression safety for the new optional field", () => {
+    // ~0.2 degrees latitude is roughly 22km one-way, ~44km round trip — the same fixture the
+    // existing "excludes a station beyond the round-trip max-detour cap" test above uses, kept
+    // in sync deliberately: this proves adding `detourKm` as an optional field didn't change
+    // UC-01's existing, unmodified behaviour.
+    const farStation = nearby(0.2);
+    const result = rankCandidates(baseInput({ candidates: [farStation], maxDetourKm: 20 }));
+    expect(result.ok).toBe(false);
+  });
+
+  it("uses a supplied strategy for the eligibility cap instead of the default", () => {
+    const farStation = nearby(0.2); // fails the default origin-radial cap at maxDetourKm: 20
+    const alwaysClose: DetourKmStrategy = () => 0;
+
+    const excludedByDefault = rankCandidates(
+      baseInput({ candidates: [farStation], maxDetourKm: 20 }),
+    );
+    expect(excludedByDefault.ok).toBe(false);
+
+    const includedByCustomStrategy = unwrap(
+      rankCandidates(
+        baseInput({ candidates: [farStation], maxDetourKm: 20, detourKm: alwaysClose }),
+      ),
+    );
+    expect(includedByCustomStrategy.recommended.stationId).toBe(farStation.stationId);
+  });
+
+  it("reports the supplied strategy's own output in metrics.additionalRoundTripKm, not the default ×2 figure", () => {
+    const near = nearby(0.001);
+    const fixedDetour: DetourKmStrategy = () => 7.5;
+    const result = unwrap(rankCandidates(baseInput({ candidates: [near], detourKm: fixedDetour })));
+    expect(result.recommended.metrics.additionalRoundTripKm).toBe(7.5);
+  });
+
+  it("end-to-end with the real corridorDetourKm (geo.ts): a station near the route beats a station nearer the origin but off-route", () => {
+    // Sydney -> Canberra, real coordinates (also used in geo.test.ts's own sanity checks).
+    const sydney = { latitude: -33.8688, longitude: 151.2093 };
+    const canberra = { latitude: -35.3081, longitude: 149.1244 };
+    // Goulburn: close to the Sydney-Canberra line (~12.5km off), further from Sydney itself.
+    const goulburn = station({
+      stationId: "goulburn",
+      location: { latitude: -34.7539, longitude: 149.7161 },
+      price: { priceTenthsCpl: 1799, sourceReportedAt: now },
+    });
+    // A station much closer to Sydney by straight-line distance, but well off the route
+    // (Wollongong, on the coast) — origin-radial ranking would favour this one; corridor
+    // ranking should not, since visiting it costs a much bigger detour off the actual trip.
+    const wollongong = station({
+      stationId: "wollongong",
+      location: { latitude: -34.4278, longitude: 150.8931 },
+      price: { priceTenthsCpl: 1799, sourceReportedAt: now }, // same price — detour is the only differentiator
+    });
+
+    const corridorStrategy: DetourKmStrategy = (origin, candidateLocation) =>
+      corridorDetourKm(origin, candidateLocation, canberra);
+
+    const result = unwrap(
+      rankCandidates(
+        baseInput({
+          origin: sydney,
+          candidates: [wollongong, goulburn],
+          maxDetourKm: 50,
+          detourKm: corridorStrategy,
+        }),
+      ),
+    );
+
+    expect(result.recommended.stationId).toBe("goulburn");
   });
 });
