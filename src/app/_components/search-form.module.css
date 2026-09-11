@@ -74,28 +74,19 @@
   color: var(--ink);
 }
 
-.chipset {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.chip {
+.select {
+  width: 100%;
   font-family: inherit;
-  font-size: 13.5px;
-  font-weight: 600;
-  padding: 9px 15px;
-  border-radius: 999px;
+  font-size: 14px;
+  padding: 12px 36px 12px 13px;
+  border-radius: 12px;
   border: 1px solid var(--line);
-  background: var(--paper-raised);
-  color: var(--ink-soft);
-  cursor: pointer;
-}
-
-.chip[aria-pressed="true"] {
-  background: var(--petrol-900);
-  border-color: var(--petrol-900);
-  color: #fff;
+  background-color: var(--paper-raised);
+  color: var(--ink);
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%234A5F5C' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
 }
 
 .radiusTop {

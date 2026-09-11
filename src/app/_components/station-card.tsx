@@ -24,6 +24,8 @@ export interface StationCardData {
   brand: string | null;
   distanceKm: number;
   centsPerLitre: number;
+  fuelCost: number;
+  driveCost: number;
   effectiveCost: number;
   estimatedSaving: number | null;
   reasonCodes: string[];
@@ -32,6 +34,9 @@ export interface StationCardData {
   freshnessBand: PriceAgeBand;
   relativeTime: string;
   source: string;
+  /** The full `/search?...` URL this card was rendered on, so Station Details' back link can
+   * return here instead of a blank Home screen. */
+  returnTo: string;
 }
 
 const FRESHNESS_LABEL: Record<PriceAgeBand, string> = {
@@ -47,7 +52,10 @@ export function StationCard(data: StationCardData) {
   return (
     <li className={`${styles.row} ${data.isRecommended ? styles.pick : ""}`}>
       <div className={styles.rank}>{data.rank}</div>
-      <Link href={`/stations/${data.stationId}`} className={styles.id}>
+      <Link
+        href={`/stations/${data.stationId}?from=${encodeURIComponent(data.returnTo)}`}
+        className={styles.id}
+      >
         <div className={styles.name}>{displayName}</div>
         {data.brand && <div className={styles.brand}>{data.brand}</div>}
         <div className={styles.meta}>
@@ -77,7 +85,10 @@ export function StationCard(data: StationCardData) {
           <sup>¢/L</sup>
         </div>
         <div className={styles.eff}>
-          trip cost <b>${data.effectiveCost.toFixed(2)}</b>
+          total <b>${data.effectiveCost.toFixed(2)}</b>
+        </div>
+        <div className={styles.costBreakdown}>
+          fuel ${data.fuelCost.toFixed(2)} + drive ${data.driveCost.toFixed(2)}
         </div>
         {data.isRecommended && data.estimatedSaving !== null && data.estimatedSaving > 0 && (
           <div className={styles.saving}>saves ${data.estimatedSaving.toFixed(2)}</div>
