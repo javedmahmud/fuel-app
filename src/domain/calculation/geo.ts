@@ -127,3 +127,29 @@ export function corridorDetourKm(origin: LatLng, waypoint: LatLng, destination: 
   const direct = haversineDistanceKm(origin, destination);
   return Math.max(0, viaWaypoint - direct);
 }
+
+/**
+ * `feature/commute-api`'s DB prefilter — the corridor-search equivalent of `boundingBox`'s
+ * "superset first, trim exact after" pattern already used by `station-search-repository.ts`'s
+ * `findNearbyCandidates`. The union of a `boundingBox` around each endpoint (radius
+ * `corridorWidthKm`) covers every point within that width of the straight-line segment between
+ * them, since a corridor of constant width around a segment can only ever bulge further from the
+ * line near the segment's own endpoints — plus this rectangle is deliberately generous rather
+ * than a tight rotated envelope, since it only needs to be a cheap, correct superset for an
+ * index-backed query; `isWithinCorridor`/`distanceToSegmentKm` do the real, precise trim
+ * afterward, on however many rows this returns.
+ */
+export function corridorBoundingBox(
+  origin: LatLng,
+  destination: LatLng,
+  corridorWidthKm: number,
+): BoundingBox {
+  const originBox = boundingBox(origin, corridorWidthKm);
+  const destinationBox = boundingBox(destination, corridorWidthKm);
+  return {
+    minLat: Math.min(originBox.minLat, destinationBox.minLat),
+    maxLat: Math.max(originBox.maxLat, destinationBox.maxLat),
+    minLng: Math.min(originBox.minLng, destinationBox.minLng),
+    maxLng: Math.max(originBox.maxLng, destinationBox.maxLng),
+  };
+}

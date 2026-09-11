@@ -1,7 +1,12 @@
 import { and, desc, eq, gte, inArray, lte, ne } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 
-import { haversineDistanceKm, boundingBox } from "../../domain/calculation/geo";
+import {
+  boundingBox,
+  corridorBoundingBox,
+  distanceToSegmentKm,
+  haversineDistanceKm,
+} from "../../domain/calculation/geo";
 import type { LatLng } from "../../domain/calculation/types";
 import { fuelPriceObservation, station } from "../db/schema";
 
@@ -104,6 +109,104 @@ export async function findNearbyCandidates(
       location,
       lifecycleState: s.lifecycleState,
       distanceKm,
+      price: { priceTenthsCpl: price.priceTenthsCpl, sourceReportedAt: price.sourceReportedAt },
+    });
+  }
+
+  return candidates;
+}
+
+export interface CorridorCandidate {
+  stationId: string;
+  brand: string | null;
+  location: LatLng;
+  lifecycleState: "active" | "suspect" | "inactive";
+  /** Perpendicular distance to the origin→destination line (`distanceToSegmentKm`) — genuinely
+   * not the same thing as `NearbyCandidate.distanceKm` above (distance from a single search
+   * point), so it gets its own, honestly-named field rather than reusing that one under a
+   * misleading name. Not consumed by `rankCandidates` (which only ever asks for
+   * `corridorDetourKm`, the real detour, via `feature/commute-geometry`'s `DetourKmStrategy`
+   * seam) — carried here only in case a future caller wants "how far off-route" for display. */
+  distanceToRouteKm: number;
+  price: { priceTenthsCpl: number; sourceReportedAt: Date };
+}
+
+/**
+ * `20_SPRINT_PLAN.md` §20.8 / ADR-011's corridor candidate search — the commute-mode counterpart
+ * to `findNearbyCandidates` above, same two-stage shape: a cheap bounding-box prefilter
+ * (`corridorBoundingBox`, this query's index-backed `WHERE`), then an exact trim in application
+ * code using real `distanceToSegmentKm` math (computed once per row and reused as both the trim
+ * test and the returned `distanceToRouteKm`, rather than calling the `isWithinCorridor` wrapper
+ * and recomputing the same distance a second time) — the box is a generous superset of the true
+ * corridor, never a tighter, wrong one; see `corridorBoundingBox`'s own comment for why that's the
+ * correct trade-off for an index-backed prefilter. The "latest price per station" join is the
+ * identical `DISTINCT ON` shape `findNearbyCandidates` already uses, reused verbatim rather than
+ * duplicated with a different variable name.
+ */
+export async function findCorridorCandidates(
+  db: ReadDb,
+  origin: LatLng,
+  destination: LatLng,
+  corridorWidthKm: number,
+  fuelTypeId: string,
+): Promise<CorridorCandidate[]> {
+  const box = corridorBoundingBox(origin, destination, corridorWidthKm);
+
+  const stationsInBox = await db
+    .select({
+      id: station.id,
+      brand: station.brand,
+      latitude: station.latitude,
+      longitude: station.longitude,
+      lifecycleState: station.lifecycleState,
+    })
+    .from(station)
+    .where(
+      and(
+        eq(station.source, "NSW_FUEL_API"),
+        ne(station.lifecycleState, "inactive"),
+        gte(station.latitude, String(box.minLat)),
+        lte(station.latitude, String(box.maxLat)),
+        gte(station.longitude, String(box.minLng)),
+        lte(station.longitude, String(box.maxLng)),
+      ),
+    );
+
+  if (stationsInBox.length === 0) return [];
+
+  const stationIds = stationsInBox.map((s) => s.id);
+  const latestPrices = await db
+    .selectDistinctOn([fuelPriceObservation.stationId], {
+      stationId: fuelPriceObservation.stationId,
+      priceTenthsCpl: fuelPriceObservation.priceTenthsCpl,
+      sourceReportedAt: fuelPriceObservation.sourceReportedAt,
+    })
+    .from(fuelPriceObservation)
+    .where(
+      and(
+        inArray(fuelPriceObservation.stationId, stationIds),
+        eq(fuelPriceObservation.fuelTypeId, fuelTypeId),
+      ),
+    )
+    .orderBy(fuelPriceObservation.stationId, desc(fuelPriceObservation.sourceReportedAt));
+
+  const priceByStationId = new Map(latestPrices.map((p) => [p.stationId, p]));
+
+  const candidates: CorridorCandidate[] = [];
+  for (const s of stationsInBox) {
+    const price = priceByStationId.get(s.id);
+    if (!price) continue;
+
+    const location: LatLng = { latitude: Number(s.latitude), longitude: Number(s.longitude) };
+    const distanceToRouteKm = distanceToSegmentKm(location, origin, destination);
+    if (distanceToRouteKm > corridorWidthKm) continue; // the box is a superset of the true corridor — trim it
+
+    candidates.push({
+      stationId: s.id,
+      brand: s.brand,
+      location,
+      lifecycleState: s.lifecycleState,
+      distanceToRouteKm,
       price: { priceTenthsCpl: price.priceTenthsCpl, sourceReportedAt: price.sourceReportedAt },
     });
   }
