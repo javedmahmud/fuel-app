@@ -337,6 +337,7 @@ describe("handleSearchRequest against real Postgres", () => {
       expect(result.status).toBe(200);
       expect(result.body).toEqual({
         results: [],
+        totalEligible: 0,
         engineVersion: null,
         generatedAt: expect.any(String),
       });
@@ -370,7 +371,7 @@ describe("handleSearchRequest against real Postgres", () => {
     });
   }, 60_000);
 
-  it("caps the response at 50 results (§13.9's result cap), default effectiveCost sort", async () => {
+  it("caps the response at 50 results (§13.9's result cap) when limit=all, default effectiveCost sort", async () => {
     await withRollback(async (tx) => {
       const origin = { latitude: -33.5, longitude: 151.05 };
       const { fuelTypeCode } = await seedManyStationsWithFarRecommended(tx, origin, 55);
@@ -381,14 +382,16 @@ describe("handleSearchRequest against real Postgres", () => {
           lat: String(origin.latitude),
           lng: String(origin.longitude),
           fuelType: fuelTypeCode,
+          limit: "all",
         }),
         "203.0.113.20",
         new Date(),
       );
 
       expect(result.status).toBe(200);
-      const body = result.body as { results: unknown[] };
+      const body = result.body as { results: unknown[]; totalEligible: number };
       expect(body.results).toHaveLength(50);
+      expect(body.totalEligible).toBe(55);
     });
   }, 30_000);
 
@@ -408,6 +411,7 @@ describe("handleSearchRequest against real Postgres", () => {
           lng: String(origin.longitude),
           fuelType: fuelTypeCode,
           sort: "distance",
+          limit: "all",
         }),
         "203.0.113.21",
         new Date(),
@@ -428,6 +432,97 @@ describe("handleSearchRequest against real Postgres", () => {
       expect(recommended?.reasonCodes.length).toBeGreaterThan(0);
       expect(recommended?.confidence).not.toBeNull();
       expect(typeof recommended?.explanation).toBe("string");
+    });
+  }, 30_000);
+
+  // Real user feedback: "Sometimes when I do search there are 30 results being returned it is a
+  // bit overwhelming. Can we give option to either have top 5 or top 10 or ALL search results to
+  // be provided?" — coverage for the `limit` param itself (`resolveDisplayLimit`'s unit test
+  // covers the pure mapping in isolation; these confirm the full request/response round trip,
+  // including `totalEligible` staying independent of how many results are actually returned).
+  it("defaults to the top 5 by effective cost when limit is unspecified, reporting the true totalEligible", async () => {
+    await withRollback(async (tx) => {
+      const origin = { latitude: -33.5, longitude: 151.05 };
+      const { fuelTypeCode } = await seedManyStationsWithFarRecommended(tx, origin, 20);
+
+      const result = await handleSearchRequest(
+        tx,
+        new URLSearchParams({
+          lat: String(origin.latitude),
+          lng: String(origin.longitude),
+          fuelType: fuelTypeCode,
+        }),
+        "203.0.113.22",
+        new Date(),
+      );
+
+      expect(result.status).toBe(200);
+      const body = result.body as { results: unknown[]; totalEligible: number };
+      expect(body.results).toHaveLength(5);
+      expect(body.totalEligible).toBe(20);
+    });
+  }, 30_000);
+
+  it("returns exactly 10 results when limit=10", async () => {
+    await withRollback(async (tx) => {
+      const origin = { latitude: -33.5, longitude: 151.05 };
+      const { fuelTypeCode } = await seedManyStationsWithFarRecommended(tx, origin, 20);
+
+      const result = await handleSearchRequest(
+        tx,
+        new URLSearchParams({
+          lat: String(origin.latitude),
+          lng: String(origin.longitude),
+          fuelType: fuelTypeCode,
+          limit: "10",
+        }),
+        "203.0.113.23",
+        new Date(),
+      );
+
+      expect(result.status).toBe(200);
+      const body = result.body as { results: unknown[]; totalEligible: number };
+      expect(body.results).toHaveLength(10);
+      expect(body.totalEligible).toBe(20);
+    });
+  }, 30_000);
+
+  it("keeps the recommended entry even at the small default limit=5, sorted by distance", async () => {
+    await withRollback(async (tx) => {
+      const origin = { latitude: -33.5, longitude: 151.05 };
+      // recommendedStationId is deliberately the single farthest station — guaranteed past
+      // position 5 when sorted by distance, exactly the case the "never drop the recommendation"
+      // safety logic exists for, now exercised at the new small default instead of only at 50.
+      const { fuelTypeCode, recommendedStationId } = await seedManyStationsWithFarRecommended(
+        tx,
+        origin,
+        20,
+      );
+
+      const result = await handleSearchRequest(
+        tx,
+        new URLSearchParams({
+          lat: String(origin.latitude),
+          lng: String(origin.longitude),
+          fuelType: fuelTypeCode,
+          sort: "distance",
+          limit: "5",
+        }),
+        "203.0.113.24",
+        new Date(),
+      );
+
+      expect(result.status).toBe(200);
+      const body = result.body as {
+        results: Array<{ stationId: string; reasonCodes: string[]; confidence: unknown }>;
+        totalEligible: number;
+      };
+      expect(body.results).toHaveLength(5);
+      expect(body.totalEligible).toBe(20);
+      const recommended = body.results.find((r) => r.stationId === recommendedStationId);
+      expect(recommended).toBeDefined();
+      expect(recommended?.reasonCodes.length).toBeGreaterThan(0);
+      expect(recommended?.confidence).not.toBeNull();
     });
   }, 30_000);
 });

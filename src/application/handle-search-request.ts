@@ -50,7 +50,11 @@ const RATE_LIMIT_MAX_PER_MINUTE = 60; // §13.9: "Rate limit — search | 60/min
 const RATE_LIMIT_WINDOW_SECONDS = 60;
 const MAX_RADIUS_KM = 50; // §13.9: "unbounded radius = full table scan"
 const DEFAULT_RADIUS_KM = 5;
-const MAX_RESULTS = 50; // §13.9: "Result cap | 50 stations | Bounds response size and compute"
+const MAX_RESULTS = 50; // §13.9: "Result cap | 50 stations | Bounds response size and compute" — the hard ceiling "all" resolves to, never truly unlimited
+// Real user feedback: "Sometimes when I do search there are 30 results being returned it is a
+// bit overwhelming." — default to the shortest option (top 5, not the full up-to-50 set) so the
+// common case is as short as possible; `limit` lets the driver ask for more.
+const DEFAULT_DISPLAY_LIMIT = 5;
 
 const querySchema = z
   .object({
@@ -63,6 +67,7 @@ const querySchema = z
     "vehicle.currentFuelFraction": z.coerce.number().min(0).max(1).optional(),
     consumptionL100km: z.coerce.number().positive().optional(),
     sort: z.enum(["effectiveCost", "distance", "price"]).optional(),
+    limit: z.enum(["5", "10", "all"]).optional(),
   })
   .refine(
     (data) => (data.lat !== undefined && data.lng !== undefined) || data.locality !== undefined,
@@ -70,6 +75,12 @@ const querySchema = z
       message: "Either both lat and lng, or locality, must be provided.",
     },
   );
+
+export function resolveDisplayLimit(limit: "5" | "10" | "all" | undefined): number {
+  if (limit === "10") return 10;
+  if (limit === "all") return MAX_RESULTS;
+  return DEFAULT_DISPLAY_LIMIT; // "5" and unspecified both land here
+}
 
 function errorResult(status: number, message: string): HandlerResult {
   return { status, body: { error: message } };
@@ -160,11 +171,17 @@ export async function handleSearchRequest(
     // no_eligible_candidates is not an error per §21.1 — an honestly-labelled empty 200.
     return {
       status: 200,
-      body: { results: [], engineVersion: null, generatedAt: now.toISOString() },
+      body: { results: [], totalEligible: 0, engineVersion: null, generatedAt: now.toISOString() },
     };
   }
 
-  const body = await buildResponseBody(db, outcome.value, params.sort ?? "effectiveCost", now);
+  const body = await buildResponseBody(
+    db,
+    outcome.value,
+    params.sort ?? "effectiveCost",
+    resolveDisplayLimit(params.limit),
+    now,
+  );
   return { status: 200, body };
 }
 
@@ -172,6 +189,7 @@ async function buildResponseBody(
   db: Db,
   outcome: SearchOutcome,
   sort: "effectiveCost" | "distance" | "price",
+  displayLimit: number,
   now: Date,
 ) {
   const { result } = outcome;
@@ -224,21 +242,35 @@ async function buildResponseBody(
   };
   results.sort(compare);
 
-  // §13.9's "Result cap | 50 stations" — but never at the cost of silently dropping the
-  // recommended entry: sorting by distance/price (rather than the default effectiveCost) can
-  // put the actual recommendation past position 50 in a dense market, and it's the only entry
-  // carrying reasonCodes/confidence/estimatedSaving, so losing it would be a real regression,
+  // `displayLimit` is the driver's own choice (5 / 10 / "all", `resolveDisplayLimit` above) —
+  // real feedback that an unbounded (well, §13.9-capped-at-50) list is "a bit overwhelming" by
+  // default. Clamped to MAX_RESULTS defensively; `resolveDisplayLimit` never actually returns
+  // more than that, since "all" resolves to MAX_RESULTS itself, not literally unlimited.
+  const effectiveLimit = Math.min(displayLimit, MAX_RESULTS);
+
+  // But never at the cost of silently dropping the recommended entry: sorting by distance/price
+  // (rather than the default effectiveCost), or a small `limit` like 5, can put the actual
+  // recommendation past the cutoff in a dense market, and it's the only entry carrying
+  // reasonCodes/confidence/estimatedSaving/explanation, so losing it would be a real regression,
   // not just a shorter list.
-  let capped = results.slice(0, MAX_RESULTS);
+  let capped = results.slice(0, effectiveLimit);
   if (
-    results.length > MAX_RESULTS &&
+    results.length > effectiveLimit &&
     !capped.some((r) => r.stationId === result.recommended.stationId)
   ) {
     const recommendedEntry = results.find((r) => r.stationId === result.recommended.stationId);
     if (recommendedEntry) {
-      capped = [...capped.slice(0, MAX_RESULTS - 1), recommendedEntry].sort(compare);
+      capped = [...capped.slice(0, effectiveLimit - 1), recommendedEntry].sort(compare);
     }
   }
 
-  return { results: capped, engineVersion: result.engineVersion, generatedAt: now.toISOString() };
+  return {
+    results: capped,
+    // The true count of eligible candidates, independent of how many are actually returned —
+    // without this, capping the list at 5 would make the UI unable to honestly say "5 of 27",
+    // only "5".
+    totalEligible: results.length,
+    engineVersion: result.engineVersion,
+    generatedAt: now.toISOString(),
+  };
 }
