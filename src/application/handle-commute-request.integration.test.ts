@@ -169,6 +169,48 @@ describe("handleCommuteRequest against real Postgres", () => {
     });
   }, 30_000);
 
+  it("resolves a real locality name for origin and a real postcode for destination — feature/commute-screen's own reason this exists", async () => {
+    await withRollback(async (tx) => {
+      const { stationId, fuelTypeCode } = await seedOnRouteStation(tx);
+
+      const result = await handleCommuteRequest(
+        tx,
+        {
+          origin: { locality: "Sydney" },
+          destination: { locality: "2600" }, // Canberra's postcode
+          fuelType: fuelTypeCode,
+          maxDetourKm: 30,
+        },
+        "203.0.113.38",
+        new Date(),
+      );
+
+      expect(result.status).toBe(200);
+      const body = result.body as { results: Array<{ stationId: string }> };
+      expect(body.results.find((r) => r.stationId === stationId)).toBeDefined();
+    });
+  }, 30_000);
+
+  it("400s for an unresolvable origin locality, without touching the search pipeline", async () => {
+    await withRollback(async (tx) => {
+      const result = await handleCommuteRequest(
+        tx,
+        {
+          origin: { locality: "Not A Real Place At All" },
+          destination: canberra,
+          fuelType: "91",
+          maxDetourKm: 20,
+        },
+        "203.0.113.39",
+        new Date(),
+      );
+      expect(result.status).toBe(400);
+      expect(result.body).toMatchObject({
+        error: expect.stringContaining("Could not resolve origin"),
+      });
+    });
+  }, 30_000);
+
   it("400s when maxDetourKm exceeds the cap", async () => {
     await withRollback(async (tx) => {
       const result = await handleCommuteRequest(
