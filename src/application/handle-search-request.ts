@@ -199,6 +199,13 @@ async function buildResponseBody(
       },
       mode: result.mode,
       metrics: {
+        // fuelCost + driveCost === effectiveCost, always (cost.ts's own effectiveCostCents is
+        // their sum) — split out so the UI can show "why" a trip costs what it does, not just
+        // the one combined number. fuelCost is the fill itself (reference 40L in comparison
+        // mode, or the vehicle's own required litres in personalised mode); driveCost is the
+        // extra fuel burned for the round-trip detour to reach this specific station.
+        fuelCost: candidate.metrics.fillCostCents / 100,
+        driveCost: candidate.metrics.extraFuelCostCents / 100,
         effectiveCost: candidate.metrics.effectiveCostCents / 100,
         estimatedSaving: isRecommended ? result.estimatedSavingCents / 100 : null,
       },

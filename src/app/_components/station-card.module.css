@@ -137,6 +137,13 @@
   font-size: 12.5px;
 }
 
+.costBreakdown {
+  font-size: 10px;
+  color: var(--ink-soft);
+  margin-top: 3px;
+  font-family: "JetBrains Mono", monospace;
+}
+
 .saving {
   font-size: 11px;
   color: var(--good-green);

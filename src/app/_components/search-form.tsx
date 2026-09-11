@@ -181,20 +181,21 @@ export function SearchForm({ fuelTypes }: { fuelTypes: FuelTypeSummary[] }) {
       </div>
 
       <div>
-        <p className={styles.fieldLabel}>Fuel type</p>
-        <div className={styles.chipset} role="group" aria-label="Fuel type">
+        <label className={styles.fieldLabel} htmlFor={`${formId}-fuelType`}>
+          Fuel type
+        </label>
+        <select
+          id={`${formId}-fuelType`}
+          className={styles.select}
+          value={fuelType}
+          onChange={(e) => setFuelType(e.target.value)}
+        >
           {fuelTypes.map((ft) => (
-            <button
-              type="button"
-              key={ft.id}
-              className={styles.chip}
-              aria-pressed={fuelType === ft.sourceCode}
-              onClick={() => setFuelType(ft.sourceCode)}
-            >
+            <option key={ft.id} value={ft.sourceCode}>
               {ft.displayName}
-            </button>
+            </option>
           ))}
-        </div>
+        </select>
       </div>
 
       <div>

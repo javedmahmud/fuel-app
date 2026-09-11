@@ -25,7 +25,12 @@ interface SearchResultEntry {
   brand: string | null;
   distanceKm: number;
   price: { centsPerLitre: number; lastUpdated: string };
-  metrics: { effectiveCost: number; estimatedSaving: number | null };
+  metrics: {
+    fuelCost: number;
+    driveCost: number;
+    effectiveCost: number;
+    estimatedSaving: number | null;
+  };
   reasonCodes: string[];
   confidence: string | null;
   explanation: string | null;
@@ -121,6 +126,11 @@ function ResultsList({
 }) {
   const fuelType = searchParams.get("fuelType") ?? "";
   const radiusKm = searchParams.get("radiusKm") ?? "5";
+  // Carried through to each station card's link so Station Details can send the driver back to
+  // these exact results (same query, same sort) instead of a blank Home screen — the actual
+  // feedback this fixes: "if I select station for details it should take to screen with search
+  // results not initial search screen."
+  const returnTo = `/search?${searchParams.toString()}`;
 
   if (body.results.length === 0) {
     return (
@@ -145,6 +155,8 @@ function ResultsList({
     brand: r.brand,
     distanceKm: r.distanceKm,
     centsPerLitre: r.price.centsPerLitre,
+    fuelCost: r.metrics.fuelCost,
+    driveCost: r.metrics.driveCost,
     effectiveCost: r.metrics.effectiveCost,
     estimatedSaving: r.metrics.estimatedSaving,
     reasonCodes: r.reasonCodes,
@@ -153,6 +165,7 @@ function ResultsList({
     freshnessBand: priceAgeBand(new Date(r.sourceObservedAt), now),
     relativeTime: formatRelativeTime(new Date(r.sourceObservedAt), now),
     source: r.source,
+    returnTo,
   }));
 
   return (

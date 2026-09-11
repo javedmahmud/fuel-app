@@ -129,22 +129,22 @@ export function SettingsForm({ fuelTypes }: { fuelTypes: FuelTypeSummary[] }) {
       <section>
         <p className={settingsStyles.groupTitle}>Search defaults</p>
 
-        <p className={styles.fieldLabel}>Default fuel type</p>
-        <div className={styles.chipset} role="group" aria-label="Default fuel type">
+        <label className={styles.fieldLabel} htmlFor={`${formId}-fuelType`}>
+          Default fuel type
+        </label>
+        <select
+          id={`${formId}-fuelType`}
+          className={styles.select}
+          value={form.fuelType ?? ""}
+          onChange={(e) => set("fuelType", e.target.value || null)}
+        >
+          <option value="">No default — choose each time</option>
           {fuelTypes.map((ft) => (
-            <button
-              type="button"
-              key={ft.id}
-              className={styles.chip}
-              aria-pressed={form.fuelType === ft.sourceCode}
-              onClick={() =>
-                set("fuelType", form.fuelType === ft.sourceCode ? null : ft.sourceCode)
-              }
-            >
+            <option key={ft.id} value={ft.sourceCode}>
               {ft.displayName}
-            </button>
+            </option>
           ))}
-        </div>
+        </select>
 
         <label className={settingsStyles.fieldLabelSpaced} htmlFor={`${formId}-locality`}>
           Default location

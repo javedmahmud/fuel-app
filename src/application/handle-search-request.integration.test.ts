@@ -199,7 +199,12 @@ describe("handleSearchRequest against real Postgres", () => {
         reasonCodes: string[];
         confidence: unknown;
         explanation: string | null;
-        metrics: { estimatedSaving: number | null };
+        metrics: {
+          fuelCost: number;
+          driveCost: number;
+          effectiveCost: number;
+          estimatedSaving: number | null;
+        };
       }>;
       const recommended = results.find((r) => r.stationId === cheapStationId);
       const other = results.find((r) => r.stationId === expensiveStationId);
@@ -210,6 +215,17 @@ describe("handleSearchRequest against real Postgres", () => {
       expect(recommended?.metrics.estimatedSaving).not.toBeNull();
       expect(typeof recommended?.explanation).toBe("string");
       expect(recommended?.explanation?.length).toBeGreaterThan(0);
+      // fuelCost + driveCost must always reconstruct effectiveCost — the whole point of exposing
+      // the breakdown is that it's an honest split of the same total, not a second, different
+      // number (feedback: "trip cost should be broken to fuel cost and trip cost").
+      for (const r of [recommended, other]) {
+        expect(r?.metrics.fuelCost).toBeGreaterThan(0);
+        expect(r?.metrics.driveCost).toBeGreaterThanOrEqual(0);
+        expect((r?.metrics.fuelCost ?? 0) + (r?.metrics.driveCost ?? 0)).toBeCloseTo(
+          r?.metrics.effectiveCost ?? -1,
+          2,
+        );
+      }
       expect(other?.reasonCodes).toEqual([]);
       expect(other?.confidence).toBeNull();
       expect(other?.metrics.estimatedSaving).toBeNull();

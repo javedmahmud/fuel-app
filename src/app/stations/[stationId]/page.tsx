@@ -16,6 +16,7 @@ import { handleStationDetailRequest } from "../../../application/handle-station-
 import type { PriceAgeBand } from "../../../domain/calculation/freshness";
 import { getDb } from "../../../infrastructure/db/client";
 import { formatRelativeTime } from "../../_lib/format-relative-time";
+import { resolveBackHref } from "../../_lib/resolve-back-href";
 import styles from "./station-details.module.css";
 
 export const dynamic = "force-dynamic";
@@ -69,13 +70,17 @@ export default async function StationDetailsPage(props: PageProps<"/stations/[st
   const { stationId } = await props.params;
   const searchParams = toSearchParams(await props.searchParams);
   const now = new Date();
+  // Set by each station card's link on the Results screen (`feature/results-ux-feedback`) — the
+  // exact `/search?...` URL the driver came from, so "back" returns to those results (same
+  // query, same sort) instead of a blank Home screen.
+  const backHref = resolveBackHref(searchParams.get("from") ?? undefined);
 
   const result = await handleStationDetailRequest(getDb(), stationId, searchParams, now);
 
   return (
     <div className={styles.app}>
       <header className={styles.masthead}>
-        <Link href="/" className={styles.backLink}>
+        <Link href={backHref} className={styles.backLink}>
           ← Search
         </Link>
         <p className={styles.wordmark}>
@@ -90,7 +95,7 @@ export default async function StationDetailsPage(props: PageProps<"/stations/[st
             <p className={styles.bannerBody}>
               This station may have been removed or the link is out of date.
             </p>
-            <Link href="/" className={styles.bannerLink}>
+            <Link href={backHref} className={styles.bannerLink}>
               ← Back to search
             </Link>
           </div>
