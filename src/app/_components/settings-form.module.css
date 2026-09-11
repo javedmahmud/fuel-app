@@ -1,0 +1,90 @@
+.groupTitle {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin: 0 0 10px;
+}
+
+.fieldLabelSpaced {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin: 16px 0 8px;
+}
+
+.radiusTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: 16px;
+}
+
+.settingsCard {
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.settingsRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 14px;
+}
+
+.settingsRowLabel {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.settingsRowSub {
+  font-size: 11px;
+  color: var(--ink-soft);
+  margin-top: 2px;
+}
+
+.toggleDisabled {
+  width: 38px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--line);
+  opacity: 0.5;
+  flex: none;
+  position: relative;
+}
+
+.toggleDisabled::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--paper-raised);
+}
+
+.savedMessage {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--good-green);
+}
+
+.dangerLink {
+  appearance: none;
+  border: none;
+  background: none;
+  margin-top: 4px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--danger);
+  cursor: pointer;
+  text-align: center;
+}
